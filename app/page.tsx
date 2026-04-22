@@ -1,3 +1,5 @@
+export const dynamic = "force-dynamic";
+
 import { Suspense } from "react";
 import connectDB from "@/lib/mongodb";
 import PlayerModel from "@/lib/models/Player";
@@ -28,25 +30,27 @@ async function getData() {
   ]);
 
   // Rolling TC/MS from sessions
-  const { tc, ms } = calcRollingTeamCondition(allSessions as unknown as TrainingSession[]);
+  const { tc, ms } = calcRollingTeamCondition(
+    allSessions as unknown as TrainingSession[],
+  );
 
   const stats = calcTeamStats(
     matches as unknown as Match[],
     players as unknown as Player[],
     tc,
-    ms
+    ms,
   );
 
   // Last 7 days for weekly summaries
   const weekAgo = new Date();
   weekAgo.setDate(weekAgo.getDate() - 7);
   const weekSessions = (allSessions as unknown as TrainingSession[]).filter(
-    (s) => new Date(s.date) >= weekAgo
+    (s) => new Date(s.date) >= weekAgo,
   );
 
   const weekSummaries = calcPlayerWeekSummaries(
     weekSessions,
-    players as unknown as Player[]
+    players as unknown as Player[],
   );
 
   // Last 10 sessions for TC/MS trend chart
@@ -62,7 +66,9 @@ async function getData() {
   return {
     players: JSON.parse(JSON.stringify(players)) as Player[],
     stats,
-    weekSummaries: JSON.parse(JSON.stringify(weekSummaries)) as PlayerWeekSummary[],
+    weekSummaries: JSON.parse(
+      JSON.stringify(weekSummaries),
+    ) as PlayerWeekSummary[],
     sessionTrend: JSON.parse(JSON.stringify(sessionTrend)),
   };
 }
@@ -86,7 +92,6 @@ export default async function HomePage() {
       </div>
 
       <main className="max-w-screen-xl mx-auto px-6 py-6 space-y-6">
-
         {/* Row 1: Team stats + MRS + Rating chart */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
           <TeamStatsGrid stats={stats} />
