@@ -3,6 +3,7 @@ import { TeamStats } from "@/types";
 import { Trophy, Target, Shield, TrendingUp, Zap } from "lucide-react";
 import dbLogo from "../../assets/dblogo.png";
 import Image from "next/image";
+import Link from "next/link";
 
 interface Props {
   stats: TeamStats;
@@ -29,9 +30,7 @@ function StatPill({
     >
       <div
         className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${
-          accent
-            ? "bg-ocean/30 text-sky"
-            : "bg-navy-800/60 text-sky"
+          accent ? "bg-ocean/30 text-sky" : "bg-navy-800/60 text-sky"
         }`}
       >
         <Icon size={18} />
@@ -52,8 +51,8 @@ export default function Header({ stats }: Props) {
     stats.formIndex >= 70
       ? "text-green-400"
       : stats.formIndex >= 40
-      ? "text-yellow-400"
-      : "text-red-400";
+        ? "text-yellow-400"
+        : "text-red-400";
 
   return (
     <header className="relative overflow-hidden">
@@ -126,14 +125,41 @@ export default function Header({ stats }: Props) {
               <TrendingUp size={18} className="text-sky" />
             </div>
             <div>
-              <div className={`font-display text-2xl font-bold leading-none ${formColor}`}>
+              <div
+                className={`font-display text-2xl font-bold leading-none ${formColor}`}
+              >
                 {stats.formIndex}
               </div>
-              <div className="text-xs text-sky/60 mt-0.5 font-body">Form Index</div>
+              <div className="text-xs text-sky/60 mt-0.5 font-body">
+                Form Index
+              </div>
               <div className="text-xs text-mist/40 font-mono">Last 5 games</div>
             </div>
           </div>
         </div>
+
+        {/* Tactics announcement banner */}
+        <Link href="/tactics" className="block mt-4">
+          <div className="rounded-2xl px-5 py-4 flex items-center justify-between border border-ocean/40 bg-gradient-to-r from-ocean/20 via-navy-800/40 to-ocean/10 hover:border-ocean/70 hover:from-ocean/30 transition-all group">
+            <div className="flex items-center gap-4">
+              <div className="w-10 h-10 rounded-xl bg-ocean/30 flex items-center justify-center text-xl flex-shrink-0">
+                ⚽
+              </div>
+              <div>
+                <p className="font-display font-bold text-white uppercase tracking-wide">
+                  Pitch Intelligence — Guardiola&apos;s Zone System
+                </p>
+                <p className="text-xs text-sky/60 font-body mt-0.5">
+                  Interactive tactical map — learn what to do in every zone on
+                  the pitch
+                </p>
+              </div>
+            </div>
+            <div className="bg-ocean group-hover:bg-navy-800 text-white font-display font-bold uppercase tracking-widest px-4 py-2 rounded-xl text-xs transition-all flex-shrink-0 hidden md:block">
+              Explore →
+            </div>
+          </div>
+        </Link>
       </div>
     </header>
   );

@@ -6,6 +6,8 @@ import Image from "next/image";
 
 import { getPlayerImage } from "@/lib/playerImages";
 
+import Link from "next/link";
+
 interface Props {
   players: Player[];
 }
@@ -110,7 +112,8 @@ export default function RankingTable({ players }: Props) {
                     : "text-red-400";
 
             return (
-              <div
+              <Link
+                href={`/players/${player._id}`}
                 key={player._id}
                 className="rank-row grid grid-cols-[40px_1fr_60px_60px_60px_60px_60px_60px_80px] gap-2 px-4 py-3 items-center"
               >
@@ -188,7 +191,7 @@ export default function RankingTable({ players }: Props) {
                     </div>
                   </div>
                 </div>
-              </div>
+              </Link>
             );
           })}
         </div>

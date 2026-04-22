@@ -6,7 +6,6 @@ import AddMatchForm from "@/components/admin/AddMatchForm";
 import LogTrainingForm from "@/components/admin/LogTrainingForm";
 import dbLogo from "../../assets/dblogo.png";
 
-
 import { getPlayerImage } from "@/lib/playerImages";
 
 import {
@@ -231,7 +230,8 @@ export default function AdminPage() {
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                 {players.map((player) => (
-                  <div
+                  <Link
+                    href={`/players/${player._id}`}
                     key={player._id}
                     className="glass rounded-2xl p-4 relative group"
                   >
@@ -290,7 +290,7 @@ export default function AdminPage() {
                         </div>
                       ))}
                     </div>
-                  </div>
+                  </Link>
                 ))}
               </div>
             )}

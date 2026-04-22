@@ -10,6 +10,8 @@ import {
 import Image from "next/image";
 import { getPlayerImage } from "@/lib/playerImages";
 
+import Link from "next/link";
+
 interface Props {
   summaries: PlayerWeekSummary[];
 }
@@ -135,7 +137,8 @@ export default function Top5Widget({ summaries }: Props) {
         {top5.map((summary, i) => {
           const cfg = READINESS_CONFIG[summary.readinessLabel];
           return (
-            <div
+            <Link
+              href={`/players/${summary.player._id}`}
               key={summary.player._id}
               className={`flex items-center gap-3 p-2.5 rounded-xl transition-all ${
                 i === 0 ? "glass-bright border border-ocean/20" : "glass"
@@ -218,7 +221,7 @@ export default function Top5Widget({ summaries }: Props) {
                   title={cfg.label}
                 />
               </div>
-            </div>
+            </Link>
           );
         })}
       </div>
