@@ -24,7 +24,10 @@ export function calcAvgRating(ratings: number[]): number {
 }
 
 export function calcConsistencyScore(ratings: number[]): number {
-  if (ratings.length < 2) return 100;
+  
+  if (ratings.length === 0) return 0; 
+  if (ratings.length < 2) return 50;
+
   const avg = calcAvgRating(ratings);
   const variance =
     ratings.reduce((acc, r) => acc + Math.pow(r - avg, 2), 0) / ratings.length;

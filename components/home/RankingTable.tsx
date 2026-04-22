@@ -49,10 +49,13 @@ export default function RankingTable({ players }: Props) {
       avgRating: calcAvgRating(p.ratings),
       consistency: calcConsistencyScore(p.ratings),
       score:
-        p.goals * 3 +
-        p.assists * 2 +
-        p.mvpCount * 5 +
-        calcAvgRating(p.ratings) * 2,
+        p.gamesPlayed === 0
+          ? -1
+          : p.goals * 3 +
+            p.assists * 2 +
+            p.mvpCount * 5 +
+            calcAvgRating(p.ratings) * 2 +
+            (p.minutesPlayed / 80) * 1.5,
     }))
     .sort((a, b) => b.score - a.score);
 
