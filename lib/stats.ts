@@ -80,6 +80,7 @@ export function calcTeamStats(
   const totalGoals = matches.reduce((a, m) => a + m.goalsFor, 0);
   const receivedGoals = matches.reduce((a, m) => a + m.goalsAgainst, 0);
   const lostPoints = draws * 2 + losses * 3;
+  const cleanSheets = matches.filter((m) => m.goalsAgainst === 0).length;
 
   const avgRatingHistory = matches.map((m, i) => {
     const perfs = m.playerPerformances;
@@ -105,6 +106,7 @@ export function calcTeamStats(
     totalGames, wins, draws, losses, winPct,
     totalGoals, receivedGoals, currentPosition: 1,
     lostPoints, avgRatingHistory, formIndex, squadDepthScore,
+    cleanSheets,
     matchReadinessScore, trainingCondition, mentalityScore,
   };
 }

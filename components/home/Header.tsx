@@ -111,7 +111,7 @@ export default function Header({ stats }: Props) {
           />
           <StatPill
             label="Clean Sheets"
-            value={stats.wins}
+            value={stats.cleanSheets}
             sub="No goals conceded"
             icon={Shield}
           />
