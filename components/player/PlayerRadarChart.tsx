@@ -1,7 +1,15 @@
 "use client";
-import { RadarChart, Radar, PolarGrid, PolarAngleAxis, ResponsiveContainer, Tooltip } from "recharts";
+import {
+  RadarChart,
+  Radar,
+  PolarGrid,
+  PolarAngleAxis,
+  ResponsiveContainer,
+  Tooltip,
+} from "recharts";
 
 interface RadarData {
+  [key: string]: number;
   workRate: number;
   technicalQuality: number;
   tacticalAwareness: number;
@@ -15,30 +23,57 @@ interface Props {
   position: string;
 }
 
-// Position average benchmarks
 const POS_BENCHMARKS: Record<string, RadarData> = {
-  GK:  { workRate: 6.5, technicalQuality: 6.0, tacticalAwareness: 7.5, focusLevel: 7.5, bodyLanguage: 7.0, coachability: 7.0 },
-  DEF: { workRate: 7.0, technicalQuality: 6.5, tacticalAwareness: 7.5, focusLevel: 7.0, bodyLanguage: 6.5, coachability: 7.0 },
-  MID: { workRate: 7.5, technicalQuality: 7.5, tacticalAwareness: 7.0, focusLevel: 7.0, bodyLanguage: 6.5, coachability: 7.0 },
-  FWD: { workRate: 7.5, technicalQuality: 8.0, tacticalAwareness: 6.5, focusLevel: 7.0, bodyLanguage: 6.5, coachability: 6.5 },
+  GK: {
+    workRate: 6.5,
+    technicalQuality: 6.0,
+    tacticalAwareness: 7.5,
+    focusLevel: 7.5,
+    bodyLanguage: 7.0,
+    coachability: 7.0,
+  },
+  DEF: {
+    workRate: 7.0,
+    technicalQuality: 6.5,
+    tacticalAwareness: 7.5,
+    focusLevel: 7.0,
+    bodyLanguage: 6.5,
+    coachability: 7.0,
+  },
+  MID: {
+    workRate: 7.5,
+    technicalQuality: 7.5,
+    tacticalAwareness: 7.0,
+    focusLevel: 7.0,
+    bodyLanguage: 6.5,
+    coachability: 7.0,
+  },
+  FWD: {
+    workRate: 7.5,
+    technicalQuality: 8.0,
+    tacticalAwareness: 6.5,
+    focusLevel: 7.0,
+    bodyLanguage: 6.5,
+    coachability: 6.5,
+  },
 };
 
 const METRIC_LABELS: Record<string, string> = {
-  workRate:          "Work Rate",
-  technicalQuality:  "Technical",
+  workRate: "Work Rate",
+  technicalQuality: "Technical",
   tacticalAwareness: "Tactical",
-  focusLevel:        "Focus",
-  bodyLanguage:      "Body Lang.",
-  coachability:      "Coachability",
+  focusLevel: "Focus",
+  bodyLanguage: "Body Lang.",
+  coachability: "Coachability",
 };
 
 const METRIC_DESCRIPTIONS: Record<string, string> = {
-  workRate:          "Effort and running intensity during sessions",
-  technicalQuality:  "Ball control, passing and finishing execution",
+  workRate: "Effort and running intensity during sessions",
+  technicalQuality: "Ball control, passing and finishing execution",
   tacticalAwareness: "Positioning, pressing triggers and shape",
-  focusLevel:        "Concentration and listening to instructions",
-  bodyLanguage:      "Positive signals and leadership presence",
-  coachability:      "Response quality to feedback and corrections",
+  focusLevel: "Concentration and listening to instructions",
+  bodyLanguage: "Positive signals and leadership presence",
+  coachability: "Response quality to feedback and corrections",
 };
 
 export default function PlayerRadarChart({ radarData, position }: Props) {
@@ -48,7 +83,9 @@ export default function PlayerRadarChart({ radarData, position }: Props) {
     return (
       <div className="glass rounded-2xl p-5 h-full flex flex-col items-center justify-center gap-2">
         <p className="text-sky/40 text-sm font-body text-center">
-          No training sessions logged yet.<br />Radar chart will appear after first session.
+          No training sessions logged yet.
+          <br />
+          Radar chart will appear after first session.
         </p>
       </div>
     );
@@ -56,8 +93,8 @@ export default function PlayerRadarChart({ radarData, position }: Props) {
 
   const chartData = Object.keys(radarData).map((key) => ({
     metric: METRIC_LABELS[key],
-    player: (radarData as Record<string, number>)[key],
-    benchmark: (benchmark as Record<string, number>)[key],
+    player: radarData[key],
+    benchmark: benchmark[key],
     fullMark: 10,
   }));
 
@@ -77,9 +114,12 @@ export default function PlayerRadarChart({ radarData, position }: Props) {
           <PolarGrid stroke="rgba(151,202,219,0.1)" />
           <PolarAngleAxis
             dataKey="metric"
-            tick={{ fill: "rgba(151,202,219,0.6)", fontSize: 11, fontFamily: "JetBrains Mono" }}
+            tick={{
+              fill: "rgba(151,202,219,0.6)",
+              fontSize: 11,
+              fontFamily: "JetBrains Mono",
+            }}
           />
-          {/* Benchmark */}
           <Radar
             name="Position Avg"
             dataKey="benchmark"
@@ -88,7 +128,6 @@ export default function PlayerRadarChart({ radarData, position }: Props) {
             strokeWidth={1}
             strokeDasharray="4 4"
           />
-          {/* Player */}
           <Radar
             name="Your Score"
             dataKey="player"
@@ -109,16 +148,21 @@ export default function PlayerRadarChart({ radarData, position }: Props) {
         </RadarChart>
       </ResponsiveContainer>
 
-      {/* Metric breakdown */}
-      <div className="space-y-2 mt-2">
+      {/* Metric breakdown with descriptions */}
+      <div className="space-y-3 mt-4">
         {Object.keys(radarData).map((key) => {
-          const val = (radarData as Record<string, number>)[key];
-          const bench = (benchmark as Record<string, number>)[key];
+          const val = radarData[key];
+          const bench = benchmark[key];
           const diff = val - bench;
           return (
             <div key={key} className="flex items-center gap-3">
-              <div className="w-20 text-[10px] font-mono text-sky/50 flex-shrink-0">
-                {METRIC_LABELS[key]}
+              <div className="w-32 flex-shrink-0">
+                <div className="text-[10px] font-mono text-sky/60 uppercase">
+                  {METRIC_LABELS[key]}
+                </div>
+                <div className="text-[9px] font-body text-sky/30 leading-tight mt-0.5">
+                  {METRIC_DESCRIPTIONS[key]}
+                </div>
               </div>
               <div className="flex-1 h-1.5 bg-navy-800/60 rounded-full overflow-hidden">
                 <div
@@ -129,23 +173,33 @@ export default function PlayerRadarChart({ radarData, position }: Props) {
                   }}
                 />
               </div>
-              <span className="text-xs font-mono text-white w-6">{val}</span>
-              <span className={`text-[10px] font-mono w-10 text-right ${diff >= 0 ? "text-green-400" : "text-red-400"}`}>
-                {diff >= 0 ? "+" : ""}{diff.toFixed(1)}
+              <span className="text-xs font-mono text-white w-6 text-right">
+                {val}
+              </span>
+              <span
+                className={`text-[10px] font-mono w-10 text-right ${diff >= 0 ? "text-green-400" : "text-red-400"}`}
+              >
+                {diff >= 0 ? "+" : ""}
+                {diff.toFixed(1)}
               </span>
             </div>
           );
         })}
       </div>
 
-      <div className="flex items-center gap-4 mt-3 pt-3 border-t border-sky/10">
+      <div className="flex items-center gap-4 mt-4 pt-3 border-t border-sky/10">
         <div className="flex items-center gap-1.5">
           <div className="w-4 h-0.5 bg-ocean" />
           <span className="text-[10px] font-mono text-sky/40">Your Score</span>
         </div>
         <div className="flex items-center gap-1.5">
-          <div className="w-4 h-0.5 bg-sky/30 border-dashed" style={{ borderTop: "1px dashed rgba(151,202,219,0.3)" }} />
-          <span className="text-[10px] font-mono text-sky/40">{position} Benchmark</span>
+          <div
+            className="w-4 h-0.5"
+            style={{ borderTop: "1px dashed rgba(151,202,219,0.3)" }}
+          />
+          <span className="text-[10px] font-mono text-sky/40">
+            {position} Benchmark
+          </span>
         </div>
       </div>
     </div>

@@ -2,7 +2,16 @@
 import { Player } from "@/types";
 import { getPlayerImage } from "@/lib/playerImages";
 import Image from "next/image";
-import { Star, Target, Zap, Clock, Shield, TrendingUp, TrendingDown, Minus } from "lucide-react";
+import {
+  Star,
+  Target,
+  Zap,
+  Clock,
+  Shield,
+  TrendingUp,
+  TrendingDown,
+  Minus,
+} from "lucide-react";
 
 interface Props {
   player: Player;
@@ -14,25 +23,73 @@ interface Props {
 }
 
 const ARC_CONFIG = {
-  progressing:       { label: "Progressing",      color: "text-green-400", bg: "bg-green-500/10 border-green-500/30", icon: TrendingUp },
-  plateauing:        { label: "Plateauing",        color: "text-yellow-400", bg: "bg-yellow-500/10 border-yellow-500/30", icon: Minus },
-  regressing:        { label: "Regressing",        color: "text-red-400",   bg: "bg-red-500/10 border-red-500/30",   icon: TrendingDown },
-  insufficient_data: { label: "Not Enough Data",  color: "text-sky/40",    bg: "bg-sky/5 border-sky/10",            icon: Minus },
+  progressing: {
+    label: "Progressing",
+    color: "text-green-400",
+    bg: "bg-green-500/10 border-green-500/30",
+    icon: TrendingUp,
+  },
+  plateauing: {
+    label: "Plateauing",
+    color: "text-yellow-400",
+    bg: "bg-yellow-500/10 border-yellow-500/30",
+    icon: Minus,
+  },
+  regressing: {
+    label: "Regressing",
+    color: "text-red-400",
+    bg: "bg-red-500/10 border-red-500/30",
+    icon: TrendingDown,
+  },
+  insufficient_data: {
+    label: "Not Enough Data",
+    color: "text-sky/40",
+    bg: "bg-sky/5 border-sky/10",
+    icon: Minus,
+  },
 };
 
 const PRS_CONFIG = {
-  match_ready: { label: "Match Ready", color: "text-green-400", dot: "bg-green-400" },
-  monitor:     { label: "Monitor",     color: "text-yellow-400", dot: "bg-yellow-400" },
-  rest:        { label: "Rest",        color: "text-red-400",    dot: "bg-red-400" },
+  match_ready: {
+    label: "Match Ready",
+    color: "text-green-400",
+    dot: "bg-green-400",
+  },
+  monitor: { label: "Monitor", color: "text-yellow-400", dot: "bg-yellow-400" },
+  rest: { label: "Rest", color: "text-red-400", dot: "bg-red-400" },
 };
 
 const ratingColor = (r: number) =>
-  r >= 8 ? "text-green-400" : r >= 6.5 ? "text-ocean" : r >= 5 ? "text-yellow-400" : r > 0 ? "text-red-400" : "text-sky/30";
+  r >= 8
+    ? "text-green-400"
+    : r >= 6.5
+      ? "text-ocean"
+      : r >= 5
+        ? "text-yellow-400"
+        : r > 0
+          ? "text-red-400"
+          : "text-sky/30";
 
-export default function PlayerHero({ player, avgRating, consistency, currentPRS, developmentArc, sessionCount }: Props) {
-  const arc = ARC_CONFIG[developmentArc as keyof typeof ARC_CONFIG] ?? ARC_CONFIG.insufficient_data;
+export default function PlayerHero({
+  player,
+  avgRating,
+  consistency,
+  currentPRS,
+  developmentArc,
+  sessionCount,
+}: Props) {
+  const arc =
+    ARC_CONFIG[developmentArc as keyof typeof ARC_CONFIG] ??
+    ARC_CONFIG.insufficient_data;
   const ArcIcon = arc.icon;
-  const prsKey = currentPRS >= 0.75 ? "match_ready" : currentPRS >= 0.5 ? "monitor" : currentPRS > 0 ? "rest" : null;
+  const prsKey =
+    currentPRS >= 0.75
+      ? "match_ready"
+      : currentPRS >= 0.5
+        ? "monitor"
+        : currentPRS > 0
+          ? "rest"
+          : null;
   const prs = prsKey ? PRS_CONFIG[prsKey] : null;
 
   return (
@@ -42,7 +99,8 @@ export default function PlayerHero({ player, avgRating, consistency, currentPRS,
         <div
           className="absolute inset-0 opacity-10"
           style={{
-            backgroundImage: "repeating-linear-gradient(45deg, #018ABE 0, #018ABE 1px, transparent 0, transparent 50%)",
+            backgroundImage:
+              "repeating-linear-gradient(45deg, #018ABE 0, #018ABE 1px, transparent 0, transparent 50%)",
             backgroundSize: "20px 20px",
           }}
         />
@@ -70,16 +128,22 @@ export default function PlayerHero({ player, avgRating, consistency, currentPRS,
               <h1 className="font-display text-3xl font-black text-white uppercase tracking-wide">
                 {player.name} {player.surname}
               </h1>
-              <span className={`px-2 py-0.5 rounded-lg text-sm font-mono pos-${player.position}`}>
+              <span
+                className={`px-2 py-0.5 rounded-lg text-sm font-mono pos-${player.position}`}
+              >
                 {player.position}
               </span>
-              <span className="text-sky/40 font-mono text-sm">#{player.number}</span>
+              <span className="text-sky/40 font-mono text-sm">
+                #{player.number}
+              </span>
             </div>
 
             {/* Badges */}
             <div className="flex items-center gap-2 mt-2 flex-wrap">
               {/* Development arc */}
-              <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-mono ${arc.bg} ${arc.color}`}>
+              <div
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-mono ${arc.bg} ${arc.color}`}
+              >
                 <ArcIcon size={11} />
                 {arc.label}
               </div>
@@ -90,11 +154,15 @@ export default function PlayerHero({ player, avgRating, consistency, currentPRS,
                   <div className={`w-1.5 h-1.5 rounded-full ${prs.dot}`} />
                   <span className={prs.color}>{prs.label}</span>
                   <span className="text-sky/30">·</span>
-                  <span className="text-white">{Math.round(currentPRS * 100)}</span>
+                  <span className="text-white">
+                    {Math.round(currentPRS * 100)}
+                  </span>
                 </div>
               )}
 
-              <span className="text-sky/30 text-xs font-mono">{sessionCount} training sessions</span>
+              <span className="text-sky/30 text-xs font-mono">
+                {sessionCount} training sessions
+              </span>
             </div>
           </div>
         </div>
@@ -102,17 +170,51 @@ export default function PlayerHero({ player, avgRating, consistency, currentPRS,
         {/* Stats grid */}
         <div className="grid grid-cols-3 md:grid-cols-6 gap-3">
           {[
-            { label: "Games",    value: player.gamesPlayed,  icon: Shield,  color: "text-white" },
-            { label: "Minutes",  value: `${player.minutesPlayed}'`, icon: Clock, color: "text-mist/70" },
-            { label: "Goals",    value: player.goals,        icon: Target,  color: "text-white" },
-            { label: "Assists",  value: player.assists,      icon: Zap,     color: "text-white" },
-            { label: "MVP",      value: player.mvpCount,     icon: Star,    color: "text-yellow-400" },
-            { label: "Avg RTG",  value: avgRating > 0 ? avgRating.toFixed(1) : "—", icon: TrendingUp, color: ratingColor(avgRating) },
+            {
+              label: "Games",
+              value: player.gamesPlayed,
+              icon: Shield,
+              color: "text-white",
+            },
+            {
+              label: "Minutes",
+              value: `${player.minutesPlayed}'`,
+              icon: Clock,
+              color: "text-mist/70",
+            },
+            {
+              label: "Goals",
+              value: player.goals,
+              icon: Target,
+              color: "text-white",
+            },
+            {
+              label: "Assists",
+              value: player.assists,
+              icon: Zap,
+              color: "text-white",
+            },
+            {
+              label: "MVP",
+              value: player.mvpCount,
+              icon: Star,
+              color: "text-yellow-400",
+            },
+            {
+              label: "Avg RTG",
+              value: avgRating > 0 ? avgRating.toFixed(1) : "—",
+              icon: TrendingUp,
+              color: ratingColor(avgRating),
+            },
           ].map(({ label, value, icon: Icon, color }) => (
             <div key={label} className="glass rounded-xl p-3 text-center">
               <Icon size={14} className="text-sky/40 mx-auto mb-1" />
-              <div className={`font-display text-xl font-black ${color}`}>{value}</div>
-              <div className="text-[10px] font-mono text-sky/40 uppercase">{label}</div>
+              <div className={`font-display text-xl font-black ${color}`}>
+                {value}
+              </div>
+              <div className="text-[10px] font-mono text-sky/40 uppercase">
+                {label}
+              </div>
             </div>
           ))}
         </div>
@@ -134,7 +236,10 @@ export default function PlayerHero({ player, avgRating, consistency, currentPRS,
           <div className="flex items-center gap-2 ml-auto">
             <span className="text-xs text-sky/40 font-body">Consistency</span>
             <div className="w-24 h-1.5 bg-navy-800/60 rounded-full overflow-hidden">
-              <div className="h-full bg-ocean rounded-full" style={{ width: `${consistency}%` }} />
+              <div
+                className="h-full bg-ocean rounded-full"
+                style={{ width: `${consistency}%` }}
+              />
             </div>
             <span className="text-xs font-mono text-white">{consistency}%</span>
           </div>
