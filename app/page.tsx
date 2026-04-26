@@ -286,9 +286,9 @@ export default async function HomePage() {
         </div>
 
         {/* Row 4: Discipline Watch — only renders once DisciplineLog model exists */}
-        {disciplineRankings.length > 0 && (
+        {/* {disciplineRankings.length > 0 && (
           <DisciplineWatch rankings={disciplineRankings} />
-        )}
+        )} */}
 
         {/* Row 5: Ranking table */}
         <Suspense

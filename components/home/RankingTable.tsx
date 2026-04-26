@@ -102,7 +102,7 @@ export default function RankingTable({ players, productionMap = {} }: Props) {
       </div>
 
       {/* Column headers */}
-      <div className="grid grid-cols-[40px_220px_45px_50px_40px_40px_45px_50px_50px_50px_60px_60px] gap-1 px-4 py-2 text-[10px] font-mono text-sky/40 uppercase tracking-wider border-b border-sky/5 overflow-x-auto">
+      <div className="grid grid-cols-[40px_minmax(160px,1fr)_45px_50px_40px_40px_45px_50px_50px_50px_60px_80px] gap-1 px-4 py-2 text-[10px] font-mono text-sky/40 uppercase tracking-wider border-b border-sky/5 overflow-x-auto">
         <div>#</div>
         <div>Player</div>
         <div className="text-center">GP</div>
@@ -150,7 +150,7 @@ export default function RankingTable({ players, productionMap = {} }: Props) {
               <Link
                 href={`/players/${player._id}`}
                 key={player._id}
-                className="rank-row grid grid-cols-[40px_220px_45px_50px_40px_40px_45px_50px_50px_50px_60px_60px] gap-1 px-4 py-3 items-center overflow-x-auto"
+                className="rank-row grid grid-cols-[40px_minmax(160px,1fr)_45px_50px_40px_40px_45px_50px_50px_50px_60px_80px] gap-1 px-4 py-3 items-center overflow-x-auto"
               >
                 {/* Rank */}
                 <div className="flex items-center justify-center">
@@ -273,12 +273,12 @@ export default function RankingTable({ players, productionMap = {} }: Props) {
                 </div>
 
                 {/* Consistency */}
-                <div className="text-center">
-                  <div className="flex flex-col items-center gap-1">
-                    <span className="text-xs font-mono text-mist/60">
+                <div className="px-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-mono text-mist/60 flex-shrink-0 w-10 text-right">
                       {player.consistency}%
                     </span>
-                    <div className="w-10 h-1 bg-navy-800/60 rounded-full overflow-hidden">
+                    <div className="flex-1 h-1.5 bg-navy-800/60 rounded-full overflow-hidden">
                       <div
                         className="h-full bg-ocean rounded-full"
                         style={{ width: `${player.consistency}%` }}
