@@ -1,23 +1,77 @@
 export const dynamic = "force-dynamic";
 
+import { notFound } from "next/navigation";
 import connectDB from "@/lib/mongodb";
 import PlayerModel from "@/lib/models/Player";
 import MatchModel from "@/lib/models/Match";
 import TrainingSessionModel from "@/lib/models/TrainingSession";
-import { notFound } from "next/navigation";
-import { Player, TrainingSession, Match } from "@/types";
+import {
+  calcAvgRating,
+  calcConsistencyScore,
+  calcProductionProfile,
+  calcAttendanceRate,
+  calcDevelopmentArc,
+  calcRollingPRS,
+  calcPillarScores,
+  calcIPMS,
+  calcDisciplineScore,
+  calcKPIProgress,
+  detectInjuryRisk,
+  calcCMR,
+  calcOfficialRating,
+  type PillarAssessment,
+  type DisciplineEvent,
+  type KPITarget,
+} from "@/lib/stats";
+import { TrainingSession, Match, Player } from "@/types";
+import Link from "next/link";
+import { ArrowLeft } from "lucide-react";
 import PlayerHero from "@/components/player/PlayerHero";
+import PlayerPRSTrend from "@/components/player/PlayerPRSTrend";
+import PlayerMatchRatingChart from "@/components/player/PlayerMatchRatingChart";
 import PlayerRadarChart from "@/components/player/PlayerRadarChart";
 import PlayerMatchHistory from "@/components/player/PlayerMatchHistory";
 import PlayerTrainingLog from "@/components/player/PlayerTrainingLog";
-import PlayerPRSTrend from "@/components/player/PlayerPRSTrend";
-import PlayerMatchRatingChart from "@/components/player/PlayerMatchRatingChart";
-import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
-import { calcAvgRating, calcConsistencyScore, prsLabel } from "@/lib/stats";
+import PillarRadar from "@/components/player/PillarRadar";
+import IPMSCard from "@/components/player/IPMSCard";
+import KPIRadar from "@/components/player/KPIRadar";
 
-interface Props {
-  params: { id: string };
+async function getPlayerAttributeModel() {
+  try {
+    return (await import("@/lib/models/PlayerAttribute")).default;
+  } catch {
+    return null;
+  }
+}
+async function getDisciplineLogModel() {
+  try {
+    return (await import("@/lib/models/DisciplineLog")).default;
+  } catch {
+    return null;
+  }
+}
+async function getPlayerKPIModel() {
+  try {
+    return (await import("@/lib/models/PlayerKPI")).default;
+  } catch {
+    return null;
+  }
+}
+
+const CURRENT_SEASON = "2025/26";
+
+function getSeasonWeeks() {
+  const seasonStart = new Date("2025-09-01");
+  const seasonEnd = new Date("2026-05-31");
+  const now = new Date();
+  const totalMs = seasonEnd.getTime() - seasonStart.getTime();
+  const elapsedMs = Math.max(0, now.getTime() - seasonStart.getTime());
+  const total = Math.round(totalMs / (7 * 24 * 60 * 60 * 1000));
+  const elapsed = Math.min(
+    total,
+    Math.round(elapsedMs / (7 * 24 * 60 * 60 * 1000)),
+  );
+  return { total, elapsed };
 }
 
 async function getData(id: string) {
@@ -25,115 +79,288 @@ async function getData(id: string) {
 
   const [player, allMatches, allSessions] = await Promise.all([
     PlayerModel.findById(id).lean(),
-    MatchModel.find({ "playerPerformances.playerId": id }).sort({ date: 1 }).lean(),
-    TrainingSessionModel.find({ "playerLogs.playerId": id }).sort({ date: 1 }).lean(),
+    MatchModel.find({}).sort({ date: 1 }).lean(),
+    TrainingSessionModel.find({}).sort({ date: 1 }).lean(),
   ]);
 
   if (!player) return null;
 
-  const matchPerformances = allMatches.map((m: any) => {
-    const perf = m.playerPerformances.find(
-      (p: any) => String(p.playerId) === String(id)
-    );
-    return {
-      date: m.date,
-      opponent: m.opponent,
-      homeAway: m.homeAway,
-      result: m.result,
-      goalsFor: m.goalsFor,
-      goalsAgainst: m.goalsAgainst,
-      minutesPlayed: perf?.minutesPlayed ?? 0,
-      goals: perf?.goals ?? 0,
-      assists: perf?.assists ?? 0,
-      rating: perf?.rating ?? 0,
-      isMvp: perf?.isMvp ?? false,
-      yellowCard: perf?.yellowCard ?? false,
-      redCard: perf?.redCard ?? false,
-    };
+  const typedPlayer = JSON.parse(JSON.stringify(player)) as Player;
+  const typedMatches = allMatches as unknown as Match[];
+  const typedSessions = allSessions as unknown as TrainingSession[];
+  const position = typedPlayer.position ?? "MID";
+
+  const osiMap: Record<string, number> = {};
+  allMatches.forEach((m: any) => {
+    if (m.osi != null) osiMap[String(m._id)] = m.osi;
   });
 
-  const sessionLogs = allSessions.map((s: any) => {
-    const log = s.playerLogs.find(
-      (l: any) => String(l.playerId) === String(id)
-    );
-    return {
-      date: s.date,
-      sessionType: s.sessionType,
-      workRate: log?.workRate ?? 0,
-      technicalQuality: log?.technicalQuality ?? 0,
-      tacticalAwareness: log?.tacticalAwareness ?? 0,
-      focusLevel: log?.focusLevel ?? 0,
-      bodyLanguage: log?.bodyLanguage ?? 0,
-      coachability: log?.coachability ?? 0,
-      emotionalState: log?.emotionalState ?? "neutral",
-      fatigueLevel: log?.fatigueLevel ?? 0,
-      injuryFlag: log?.injuryFlag ?? false,
-      minutesParticipated: log?.minutesParticipated ?? 0,
-      prs: log?.prs ?? 0,
-      readinessLabel: log?.readinessLabel ?? "monitor",
-    };
+  const matchHistory = typedMatches
+    .map((m) => {
+      const perf = m.playerPerformances.find((p) => String(p.playerId) === id);
+      if (!perf) return null;
+      const cmrCriteria = {
+        defensiveContrib: (perf as any).defensiveContrib ?? null,
+        technicalExec: (perf as any).technicalExec ?? null,
+        tacticalDiscipline: (perf as any).tacticalDiscipline ?? null,
+        attackingContrib: (perf as any).attackingContrib ?? null,
+        mentalPerformance: (perf as any).mentalPerformance ?? null,
+      };
+      const cmr = calcCMR(cmrCriteria, position);
+      const osi = osiMap[String((m as any)._id)] ?? null;
+      const officialRating =
+        (perf as any).officialRating ??
+        calcOfficialRating(cmr, perf.rating, osi);
+      return {
+        matchId: String((m as any)._id),
+        date: m.date,
+        opponent: m.opponent,
+        homeAway: m.homeAway,
+        result: m.result,
+        goalsFor: m.goalsFor,
+        goalsAgainst: m.goalsAgainst,
+        osi,
+        minutesPlayed: perf.minutesPlayed,
+        goals: perf.goals,
+        assists: perf.assists,
+        rating: perf.rating,
+        officialRating,
+        cmr,
+        isMvp: perf.isMvp,
+        yellowCard: perf.yellowCard,
+        redCard: perf.redCard,
+        defensiveImpact: (perf as any).defensiveImpact ?? null,
+        cmrCriteria,
+      };
+    })
+    .filter(Boolean) as any[];
+
+  const sessionHistory = typedSessions
+    .map((s) => {
+      const log = s.playerLogs.find((l) => String(l.playerId) === id);
+      if (!log) return null;
+      return {
+        sessionId: String((s as any)._id),
+        date: s.date,
+        sessionType: (s as any).sessionType,
+        prs: log.prs,
+        formulaVersion: (log as any).formulaVersion ?? 1,
+        readinessLabel: log.readinessLabel,
+        workRate: log.workRate,
+        technicalQuality: log.technicalQuality,
+        tacticalAwareness: log.tacticalAwareness,
+        focusLevel: log.focusLevel,
+        bodyLanguage: log.bodyLanguage,
+        coachability: log.coachability,
+        emotionalState: log.emotionalState,
+        fatigueLevel: log.fatigueLevel,
+        injuryFlag: log.injuryFlag,
+        minutesParticipated: log.minutesParticipated,
+      };
+    })
+    .filter(Boolean);
+
+  const ratings = (matchHistory as any[])
+    .map((m) => m.officialRating ?? m.rating)
+    .filter((r): r is number => r != null);
+  const avgRating = calcAvgRating(ratings);
+  const consistencyScore = calcConsistencyScore(ratings);
+  const productionProfile = calcProductionProfile(typedPlayer, typedMatches);
+  const attendanceRate = calcAttendanceRate(id, typedSessions);
+  const injuryRisk = detectInjuryRisk(id, typedSessions);
+
+  const v2Count = typedSessions.filter(
+    (s) => (s as any).formulaVersion === 2,
+  ).length;
+  const minVersion: 1 | 2 = v2Count >= 3 ? 2 : 1;
+  const rollingPRS = calcRollingPRS(id, typedSessions, minVersion);
+  const rollingPRSLabel =
+    rollingPRS === null
+      ? null
+      : rollingPRS >= 0.75
+        ? "match_ready"
+        : rollingPRS >= 0.5
+          ? "monitor"
+          : "rest";
+
+  const allPRS = typedSessions.flatMap((s) => {
+    const log = s.playerLogs.find((l) => String(l.playerId) === id);
+    return log ? [log.prs * 100] : [];
   });
+  const seasonAvgPRS = allPRS.length
+    ? parseFloat((allPRS.reduce((a, b) => a + b, 0) / allPRS.length).toFixed(1))
+    : 0;
+  const developmentArc = calcDevelopmentArc(id, typedSessions, minVersion);
 
-  // Radar averages across all sessions
-  const radarData =
-    sessionLogs.length > 0
-      ? {
-          workRate: parseFloat((sessionLogs.reduce((a, s) => a + s.workRate, 0) / sessionLogs.length).toFixed(1)),
-          technicalQuality: parseFloat((sessionLogs.reduce((a, s) => a + s.technicalQuality, 0) / sessionLogs.length).toFixed(1)),
-          tacticalAwareness: parseFloat((sessionLogs.reduce((a, s) => a + s.tacticalAwareness, 0) / sessionLogs.length).toFixed(1)),
-          focusLevel: parseFloat((sessionLogs.reduce((a, s) => a + s.focusLevel, 0) / sessionLogs.length).toFixed(1)),
-          bodyLanguage: parseFloat((sessionLogs.reduce((a, s) => a + s.bodyLanguage, 0) / sessionLogs.length).toFixed(1)),
-          coachability: parseFloat((sessionLogs.reduce((a, s) => a + s.coachability, 0) / sessionLogs.length).toFixed(1)),
-        }
-      : null;
+  let pillarScores = {
+    physical: 5,
+    technical: 5,
+    tactical: 5,
+    mental: 5,
+    overall: 5,
+    weeklySnapshots: 0,
+  };
+  let pillarAssessments: PillarAssessment[] = [];
+  const PlayerAttributeModel = await getPlayerAttributeModel();
+  if (PlayerAttributeModel) {
+    const raw = await PlayerAttributeModel.find({ playerId: id })
+      .sort({ weekOf: 1 })
+      .lean();
+    pillarAssessments = raw as unknown as PillarAssessment[];
+    if (pillarAssessments.length > 0)
+      pillarScores = calcPillarScores(pillarAssessments, position);
+  }
 
-  // PRS trend
-  const prsTrend = sessionLogs.map((s) => ({
-    date: s.date,
-    prs: Math.round(s.prs * 100),
-    sessionType: s.sessionType,
-  }));
+  const ipms = calcIPMS(id, typedSessions, typedMatches, osiMap);
 
-  // Development arc
-  const prsValues = sessionLogs.map((s) => s.prs);
-  const early = prsValues.slice(0, Math.floor(prsValues.length / 3));
-  const late = prsValues.slice(Math.floor((prsValues.length * 2) / 3));
-  const earlyAvg = early.length ? early.reduce((a, b) => a + b, 0) / early.length : 0;
-  const lateAvg = late.length ? late.reduce((a, b) => a + b, 0) / late.length : 0;
-  const developmentArc =
-    prsValues.length < 3
-      ? "insufficient_data"
-      : lateAvg - earlyAvg > 0.05
-      ? "progressing"
-      : lateAvg - earlyAvg < -0.05
-      ? "regressing"
-      : "plateauing";
+  let disciplineScore = 100;
+  let disciplineEvents: DisciplineEvent[] = [];
+  const DisciplineLogModel = await getDisciplineLogModel();
+  if (DisciplineLogModel) {
+    const raw = await DisciplineLogModel.find({ playerId: id })
+      .sort({ date: -1 })
+      .lean();
+    disciplineEvents = raw as unknown as DisciplineEvent[];
+    disciplineScore = calcDisciplineScore(disciplineEvents);
+  }
 
-  // Current PRS
-  const lastPRS = sessionLogs.length ? sessionLogs[sessionLogs.length - 1].prs : 0;
+  let kpiProgress = null;
+  const PlayerKPIModel = await getPlayerKPIModel();
+  if (PlayerKPIModel) {
+    const kpiDoc = (await PlayerKPIModel.findOne({
+      playerId: id,
+      season: CURRENT_SEASON,
+    }).lean()) as any;
+    if (kpiDoc) {
+      const targets = kpiDoc.targets as KPITarget;
+      const currentValues: Record<string, number> = {
+        prsAvg: seasonAvgPRS,
+        goals: typedPlayer.goals ?? 0,
+        avgRating,
+        attendanceRate,
+        consistencyScore,
+        disciplineScore,
+        pillarOverall: pillarScores.overall,
+      };
+      const { total, elapsed } = getSeasonWeeks();
+      kpiProgress = {
+        targets,
+        progress: calcKPIProgress(targets, currentValues, elapsed, total),
+        currentValues,
+        weeksElapsed: elapsed,
+        weeksRemaining: total - elapsed,
+      };
+    }
+  }
+
+  const metricKeys = [
+    "workRate",
+    "technicalQuality",
+    "tacticalAwareness",
+    "focusLevel",
+    "bodyLanguage",
+    "coachability",
+  ] as const;
+  const trainingRadar = Object.fromEntries(
+    metricKeys.map((key) => {
+      const vals = (sessionHistory as any[])
+        .map((s) => s?.[key])
+        .filter((v): v is number => typeof v === "number");
+      return [
+        key,
+        vals.length
+          ? parseFloat(
+              (vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(2),
+            )
+          : 0,
+      ];
+    }),
+  );
+
+  const serialize = <T,>(v: T): T => JSON.parse(JSON.stringify(v));
 
   return {
-    player: JSON.parse(JSON.stringify(player)) as Player,
-    matchPerformances: JSON.parse(JSON.stringify(matchPerformances)),
-    sessionLogs: JSON.parse(JSON.stringify(sessionLogs)),
-    radarData,
-    prsTrend,
-    developmentArc,
-    currentPRS: lastPRS,
-    avgRating: calcAvgRating((player as any).ratings ?? []),
-    consistency: calcConsistencyScore((player as any).ratings ?? []),
+    player: serialize(typedPlayer),
+    avgRating,
+    consistencyScore,
+    attendanceRate,
+    disciplineScore,
+    seasonAvgPRS,
+    injuryRisk,
+    productionProfile: serialize(productionProfile),
+    rollingPRS,
+    rollingPRSLabel: rollingPRSLabel as
+      | "match_ready"
+      | "monitor"
+      | "rest"
+      | null,
+    developmentArc: serialize(developmentArc),
+    pillarScores: serialize(pillarScores),
+    ipms: serialize(ipms),
+    trainingRadar,
+    kpiProgress: serialize(kpiProgress),
+    matchHistory: serialize(matchHistory),
+    sessionHistory: serialize(sessionHistory),
+    pillarAssessments: serialize(pillarAssessments),
+    disciplineEvents: serialize(disciplineEvents.slice(0, 20)),
   };
 }
 
-export default async function PlayerPage({ params }: Props) {
+export default async function PlayerProfilePage({
+  params,
+}: {
+  params: { id: string };
+}) {
   const data = await getData(params.id);
   if (!data) notFound();
 
-  const { player, matchPerformances, sessionLogs, radarData, prsTrend, developmentArc, currentPRS, avgRating, consistency } = data;
+  const {
+    player,
+    avgRating,
+    consistencyScore,
+    attendanceRate,
+    disciplineScore,
+    seasonAvgPRS,
+    injuryRisk,
+    productionProfile,
+    rollingPRS,
+    rollingPRSLabel,
+    developmentArc,
+    pillarScores,
+    ipms,
+    trainingRadar,
+    kpiProgress,
+    matchHistory,
+    sessionHistory,
+    pillarAssessments,
+  } = data;
+
+  const prsTrend = (sessionHistory as any[]).map((s) => ({
+    date: s.date,
+    prs: Math.round(s.prs * 100),
+    sessionType: s.sessionType,
+    formulaVersion: s.formulaVersion,
+  }));
+
+  const matchPerfsForChart = (matchHistory as any[]).map((m) => ({
+    date: m.date,
+    opponent: m.opponent,
+    result: m.result,
+    rating: m.officialRating ?? m.rating,
+    goals: m.goals,
+    assists: m.assists,
+    isMvp: m.isMvp,
+    minutesPlayed: m.minutesPlayed,
+  }));
+
+  const radarData = Object.values(trainingRadar).some((v) => (v as number) > 0)
+    ? (trainingRadar as any)
+    : null;
+  const hasPillars = pillarAssessments.length > 0;
+  const hasIPMS = ipms.trainingSignal > 0 || sessionHistory.length > 0;
 
   return (
     <div className="min-h-screen">
-      {/* Nav */}
       <div className="border-b border-sky/10 bg-navy-950/40 backdrop-blur-sm sticky top-0 z-40">
         <div className="max-w-screen-xl mx-auto px-6 py-3 flex items-center justify-between">
           <Link
@@ -141,45 +368,56 @@ export default async function PlayerPage({ params }: Props) {
             className="flex items-center gap-2 text-xs font-mono text-sky/50 hover:text-white transition-colors"
           >
             <ArrowLeft size={12} />
-            Back to Dashboard
+            Dashboard
           </Link>
           <span className="text-sky/30 font-mono text-xs">
-            DINAMO BATUMI U15 · PLAYER PROFILE
+            {player.name.toUpperCase()} {player.surname.toUpperCase()} · #
+            {player.number}
           </span>
         </div>
       </div>
 
       <main className="max-w-screen-xl mx-auto px-6 py-6 space-y-6">
-        {/* Hero */}
         <PlayerHero
           player={player}
           avgRating={avgRating}
-          consistency={consistency}
-          currentPRS={currentPRS}
+          consistency={consistencyScore}
+          rollingPRS={rollingPRS}
+          rollingPRSLabel={rollingPRSLabel}
           developmentArc={developmentArc}
-          sessionCount={sessionLogs.length}
+          sessionCount={sessionHistory.length}
+          productionProfile={productionProfile}
+          attendanceRate={attendanceRate}
+          disciplineScore={disciplineScore}
+          injuryRisk={injuryRisk}
         />
 
-        {/* Row 1: Radar + PRS Trend */}
+        {(hasPillars || hasIPMS) && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            <PillarRadar
+              pillarScores={pillarScores}
+              assessmentCount={pillarAssessments.length}
+              position={player.position}
+            />
+            <IPMSCard ipms={ipms} matchCount={(matchHistory as any[]).length} />
+          </div>
+        )}
+
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-          <PlayerRadarChart radarData={radarData} position={player.position} />
           <PlayerPRSTrend prsTrend={prsTrend} />
+          <PlayerMatchRatingChart
+            matchPerformances={matchPerfsForChart}
+            avgRating={avgRating}
+          />
         </div>
 
-        {/* Row 2: Match rating chart */}
-        <PlayerMatchRatingChart matchPerformances={matchPerformances} avgRating={avgRating} />
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+          <PlayerRadarChart radarData={radarData} position={player.position} />
+          <KPIRadar kpiProgress={kpiProgress} />
+        </div>
 
-        {/* Row 3: Training log */}
-        <PlayerTrainingLog sessionLogs={sessionLogs} />
-
-        {/* Row 4: Match history */}
-        <PlayerMatchHistory matchPerformances={matchPerformances} />
-
-        <footer className="text-center py-4">
-          <p className="text-sky/20 font-mono text-xs">
-            DINAMO BATUMI U15 · SQUAD HUB · {new Date().getFullYear()}
-          </p>
-        </footer>
+        <PlayerMatchHistory matchHistory={matchHistory as any} />
+        <PlayerTrainingLog sessionHistory={sessionHistory as any} />
       </main>
     </div>
   );

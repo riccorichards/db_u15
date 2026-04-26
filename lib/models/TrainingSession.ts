@@ -23,8 +23,11 @@ const PlayerSessionLogSchema = new Schema(
       enum: ["match_ready", "monitor", "rest"],
       default: "monitor",
     },
+    // v1 = legacy absolute formula, v2 = expectation-relative (pillar + template)
+    // Stored per-log so calcDevelopmentArc can filter by version accurately.
+    formulaVersion: { type: Number, default: 1 },
   },
-  { _id: false }
+  { _id: false },
 );
 
 const TrainingSessionSchema = new Schema(
@@ -32,7 +35,14 @@ const TrainingSessionSchema = new Schema(
     date: { type: String, required: true },
     sessionType: {
       type: String,
-      enum: ["tactical", "physical", "technical", "mixed", "recovery"],
+      enum: [
+        "tactical",
+        "physical",
+        "technical",
+        "mixed",
+        "recovery",
+        "pre_match",
+      ],
       required: true,
     },
     intensity: { type: Number, min: 1, max: 10, required: true },
@@ -43,9 +53,13 @@ const TrainingSessionSchema = new Schema(
     notes: { type: String, default: "" },
     teamTC: { type: Number, default: 0 },
     teamMS: { type: Number, default: 0 },
+    // Session-level formula version — used by calcRollingTeamCondition to avoid
+    // blending v1 and v2 TC/MS values in the rolling average.
+    // Old sessions without this field are treated as v1 via the default.
+    formulaVersion: { type: Number, default: 1 },
     playerLogs: [PlayerSessionLogSchema],
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 export default mongoose.models.TrainingSession ||

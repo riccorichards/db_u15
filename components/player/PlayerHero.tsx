@@ -1,5 +1,5 @@
 "use client";
-import { Player } from "@/types";
+import { Player, DevelopmentArc, ProductionProfile } from "@/types";
 import { getPlayerImage } from "@/lib/playerImages";
 import Image from "next/image";
 import {
@@ -11,15 +11,23 @@ import {
   TrendingUp,
   TrendingDown,
   Minus,
+  AlertTriangle,
+  Activity,
+  UserCheck,
 } from "lucide-react";
 
 interface Props {
   player: Player;
   avgRating: number;
   consistency: number;
-  currentPRS: number;
-  developmentArc: string;
+  rollingPRS: number | null;
+  rollingPRSLabel: "match_ready" | "monitor" | "rest" | null;
+  developmentArc: DevelopmentArc;
   sessionCount: number;
+  productionProfile: ProductionProfile;
+  attendanceRate: number;
+  disciplineScore: number;
+  injuryRisk: boolean;
 }
 
 const ARC_CONFIG = {
@@ -27,26 +35,33 @@ const ARC_CONFIG = {
     label: "Progressing",
     color: "text-green-400",
     bg: "bg-green-500/10 border-green-500/30",
-    icon: TrendingUp,
+    Icon: TrendingUp,
   },
   plateauing: {
     label: "Plateauing",
     color: "text-yellow-400",
     bg: "bg-yellow-500/10 border-yellow-500/30",
-    icon: Minus,
+    Icon: Minus,
   },
   regressing: {
     label: "Regressing",
     color: "text-red-400",
     bg: "bg-red-500/10 border-red-500/30",
-    icon: TrendingDown,
+    Icon: TrendingDown,
   },
   insufficient_data: {
-    label: "Not Enough Data",
+    label: "Insufficient Data",
     color: "text-sky/40",
     bg: "bg-sky/5 border-sky/10",
-    icon: Minus,
+    Icon: Minus,
   },
+};
+
+const CONFIDENCE_COLORS = {
+  none: "text-sky/30",
+  low: "text-yellow-400/70",
+  medium: "text-ocean/80",
+  high: "text-green-400/80",
 };
 
 const PRS_CONFIG = {
@@ -74,23 +89,27 @@ export default function PlayerHero({
   player,
   avgRating,
   consistency,
-  currentPRS,
+  rollingPRS,
+  rollingPRSLabel,
   developmentArc,
   sessionCount,
+  productionProfile,
+  attendanceRate,
+  disciplineScore,
+  injuryRisk,
 }: Props) {
-  const arc =
-    ARC_CONFIG[developmentArc as keyof typeof ARC_CONFIG] ??
-    ARC_CONFIG.insufficient_data;
-  const ArcIcon = arc.icon;
-  const prsKey =
-    currentPRS >= 0.75
-      ? "match_ready"
-      : currentPRS >= 0.5
-        ? "monitor"
-        : currentPRS > 0
-          ? "rest"
-          : null;
-  const prs = prsKey ? PRS_CONFIG[prsKey] : null;
+  const arc = ARC_CONFIG[developmentArc.arc] ?? ARC_CONFIG.insufficient_data;
+  const ArcIcon = arc.Icon;
+  const prs = rollingPRSLabel ? PRS_CONFIG[rollingPRSLabel] : null;
+
+  const disciplineColor =
+    disciplineScore >= 85
+      ? "text-green-400"
+      : disciplineScore >= 70
+        ? "text-ocean"
+        : disciplineScore >= 50
+          ? "text-yellow-400"
+          : "text-red-400";
 
   return (
     <div className="glass rounded-2xl overflow-hidden">
@@ -104,7 +123,6 @@ export default function PlayerHero({
             backgroundSize: "20px 20px",
           }}
         />
-        {/* Jersey number watermark */}
         <div className="absolute right-6 top-1/2 -translate-y-1/2 font-display font-black text-8xl text-white/10 select-none">
           {player.number}
         </div>
@@ -122,6 +140,11 @@ export default function PlayerHero({
               className="object-cover object-top"
               quality={95}
             />
+            {injuryRisk && (
+              <div className="absolute bottom-0 left-0 right-0 bg-red-500/80 flex items-center justify-center py-0.5">
+                <AlertTriangle size={10} className="text-white" />
+              </div>
+            )}
           </div>
           <div className="pb-1 flex-1">
             <div className="flex items-center gap-3 flex-wrap">
@@ -138,7 +161,7 @@ export default function PlayerHero({
               </span>
             </div>
 
-            {/* Badges */}
+            {/* Badges row */}
             <div className="flex items-center gap-2 mt-2 flex-wrap">
               {/* Development arc */}
               <div
@@ -146,17 +169,35 @@ export default function PlayerHero({
               >
                 <ArcIcon size={11} />
                 {arc.label}
+                {developmentArc.confidence !== "none" && (
+                  <span
+                    className={`text-[9px] ml-1 ${CONFIDENCE_COLORS[developmentArc.confidence]}`}
+                  >
+                    ({developmentArc.confidence} confidence ·{" "}
+                    {developmentArc.sessionCount} sessions)
+                  </span>
+                )}
               </div>
 
-              {/* PRS badge */}
-              {prs && (
+              {/* Rolling PRS badge */}
+              {prs && rollingPRS !== null && (
                 <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg glass text-xs font-mono">
                   <div className={`w-1.5 h-1.5 rounded-full ${prs.dot}`} />
                   <span className={prs.color}>{prs.label}</span>
                   <span className="text-sky/30">·</span>
                   <span className="text-white">
-                    {Math.round(currentPRS * 100)}
+                    {Math.round(rollingPRS * 100)}
                   </span>
+                  <span className="text-[9px] text-sky/30 ml-0.5">
+                    3-session avg
+                  </span>
+                </div>
+              )}
+
+              {injuryRisk && (
+                <div className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-red-500/15 border border-red-500/30 text-xs font-mono text-red-400">
+                  <AlertTriangle size={11} />
+                  Injury Risk Detected
                 </div>
               )}
 
@@ -167,8 +208,59 @@ export default function PlayerHero({
           </div>
         </div>
 
+        {/* Arc deltas */}
+        {developmentArc.confidence !== "none" && (
+          <div className="flex items-center gap-4 mb-4 p-3 glass rounded-xl border border-sky/5">
+            <div className="text-[10px] font-mono text-sky/40 uppercase tracking-wider">
+              Arc signals
+            </div>
+            {[
+              {
+                label: "Short-term",
+                val: developmentArc.shortTerm,
+                desc: "Last 3 vs prior 3 sessions",
+              },
+              {
+                label: "Mid-term",
+                val: developmentArc.midTerm,
+                desc: "Last 5 vs first 5 sessions",
+              },
+              {
+                label: "Season slope",
+                val: developmentArc.seasonSlope,
+                desc: "Linear regression across all PRS",
+                scale: 100,
+              },
+            ].map(({ label, val, desc, scale = 1 }) => {
+              const display = (val * scale).toFixed(scale === 100 ? 3 : 2);
+              const isPos = val > 0;
+              const isFlat = Math.abs(val) < 0.01;
+              return (
+                <div key={label} className="flex-1 text-center">
+                  <div
+                    className={`font-mono text-sm font-bold ${
+                      isFlat
+                        ? "text-sky/40"
+                        : isPos
+                          ? "text-green-400"
+                          : "text-red-400"
+                    }`}
+                  >
+                    {isPos ? "+" : ""}
+                    {display}
+                  </div>
+                  <div className="text-[9px] font-mono text-sky/40 mt-0.5">
+                    {label}
+                  </div>
+                  <div className="text-[8px] text-sky/25 font-body">{desc}</div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
         {/* Stats grid */}
-        <div className="grid grid-cols-3 md:grid-cols-6 gap-3">
+        <div className="grid grid-cols-3 md:grid-cols-6 gap-3 mb-4">
           {[
             {
               label: "Games",
@@ -219,8 +311,53 @@ export default function PlayerHero({
           ))}
         </div>
 
-        {/* Cards + consistency */}
-        <div className="flex items-center gap-4 mt-3">
+        {/* Production profile */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+          {[
+            {
+              label: "Goals/80",
+              value: productionProfile.goalsPer80.toFixed(2),
+              color: "text-green-400",
+              hint: "Goals per 80 min",
+            },
+            {
+              label: "Assists/80",
+              value: productionProfile.assistsPer80.toFixed(2),
+              color: "text-ocean",
+              hint: "Assists per 80 min",
+            },
+            {
+              label: "G+A/80",
+              value: productionProfile.goalInvolvementPer80.toFixed(2),
+              color: "text-sky",
+              hint: "Goal involvement",
+            },
+            {
+              label: "Win Rate",
+              value: `${productionProfile.matchWinRate.toFixed(0)}%`,
+              color: "text-purple-400",
+              hint: "When this player plays",
+            },
+          ].map(({ label, value, color, hint }) => (
+            <div
+              key={label}
+              className="glass-bright rounded-xl p-3 text-center border border-sky/10"
+            >
+              <div className="text-[9px] font-mono text-sky/40 uppercase mb-1">
+                {hint}
+              </div>
+              <div className={`font-display text-lg font-black ${color}`}>
+                {value}
+              </div>
+              <div className="text-[10px] font-mono text-sky/50 mt-0.5">
+                {label}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Footer row: consistency, attendance, discipline, cards */}
+        <div className="flex flex-wrap items-center gap-4 pt-3 border-t border-sky/10">
           {player.yellowCards > 0 && (
             <div className="flex items-center gap-1.5 text-xs font-mono text-yellow-400">
               <div className="w-3 h-4 bg-yellow-400 rounded-sm" />
@@ -233,6 +370,26 @@ export default function PlayerHero({
               {player.redCards} red
             </div>
           )}
+
+          {/* Attendance */}
+          <div className="flex items-center gap-2">
+            <UserCheck size={12} className="text-sky/40" />
+            <span className="text-xs text-sky/40 font-body">Attendance</span>
+            <span className="text-xs font-mono text-white">
+              {attendanceRate.toFixed(0)}%
+            </span>
+          </div>
+
+          {/* Discipline */}
+          <div className="flex items-center gap-2">
+            <Activity size={12} className="text-sky/40" />
+            <span className="text-xs text-sky/40 font-body">Discipline</span>
+            <span className={`text-xs font-mono font-bold ${disciplineColor}`}>
+              {disciplineScore}/100
+            </span>
+          </div>
+
+          {/* Consistency */}
           <div className="flex items-center gap-2 ml-auto">
             <span className="text-xs text-sky/40 font-body">Consistency</span>
             <div className="w-24 h-1.5 bg-navy-800/60 rounded-full overflow-hidden">

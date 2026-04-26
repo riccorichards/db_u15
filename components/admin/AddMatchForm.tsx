@@ -1,7 +1,14 @@
 "use client";
-import { useState } from "react";
-import { Player } from "@/types";
-import { Plus, Minus, Loader2, ClipboardList } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Player, Opponent } from "@/types";
+import {
+  Plus,
+  Minus,
+  Loader2,
+  ClipboardList,
+  ChevronDown,
+  ChevronUp,
+} from "lucide-react";
 
 interface Props {
   players: Player[];
@@ -18,6 +25,48 @@ interface PerfEntry {
   isMvp: boolean;
   yellowCard: boolean;
   redCard: boolean;
+  // CMR criteria — optional
+  defensiveContrib: number | null;
+  technicalExec: number | null;
+  tacticalDiscipline: number | null;
+  attackingContrib: number | null;
+  mentalPerformance: number | null;
+  defensiveImpact: number | null;
+}
+
+function CriteriaSlider({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: number | null;
+  onChange: (v: number) => void;
+}) {
+  const v = value ?? 5;
+  const color =
+    v >= 8 ? "text-green-400" : v >= 5 ? "text-ocean" : "text-red-400";
+  return (
+    <div>
+      <div className="flex justify-between mb-0.5">
+        <span className="text-[10px] font-mono text-sky/50 uppercase">
+          {label}
+        </span>
+        <span className={`text-[10px] font-mono font-bold ${color}`}>
+          {v}/10
+        </span>
+      </div>
+      <input
+        type="range"
+        min={1}
+        max={10}
+        step={0.5}
+        value={v}
+        onChange={(e) => onChange(parseFloat(e.target.value))}
+        className="w-full accent-ocean"
+      />
+    </div>
+  );
 }
 
 export default function AddMatchForm({
@@ -33,11 +82,23 @@ export default function AddMatchForm({
     goalsAgainst: 0,
     trainingCondition: 0.75,
     mentalityScore: 0.7,
+    opponentId: "" as string,
   });
   const [performances, setPerformances] = useState<PerfEntry[]>([]);
+  const [opponents, setOpponents] = useState<Opponent[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
+  const [expandedCMR, setExpandedCMR] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    fetch("/api/opponents")
+      .then((r) => r.json())
+      .then((data) => {
+        if (Array.isArray(data)) setOpponents(data);
+      })
+      .catch(() => {});
+  }, []);
 
   const addPlayer = (playerId: string) => {
     if (performances.find((p) => p.playerId === playerId)) return;
@@ -45,40 +106,79 @@ export default function AddMatchForm({
       ...performances,
       {
         playerId,
-        minutesPlayed: 90,
+        minutesPlayed: 80,
         goals: 0,
         assists: 0,
         rating: 7,
         isMvp: false,
         yellowCard: false,
         redCard: false,
+        defensiveContrib: null,
+        technicalExec: null,
+        tacticalDiscipline: null,
+        attackingContrib: null,
+        mentalPerformance: null,
+        defensiveImpact: null,
       },
     ]);
   };
 
-  const removePlayer = (playerId: string) => {
+  const removePlayer = (playerId: string) =>
     setPerformances(performances.filter((p) => p.playerId !== playerId));
-  };
 
   const updatePerf = (
     playerId: string,
     field: keyof PerfEntry,
     value: unknown,
-  ) => {
+  ) =>
     setPerformances(
       performances.map((p) =>
         p.playerId === playerId ? { ...p, [field]: value } : p,
       ),
     );
-  };
 
-  const handleMvp = (playerId: string) => {
+  const handleMvp = (playerId: string) =>
     setPerformances(
       performances.map((p) => ({
         ...p,
         isMvp: p.playerId === playerId ? !p.isMvp : false,
       })),
     );
+
+  const toggleCMR = (playerId: string) =>
+    setExpandedCMR((prev) => {
+      const next = new Set(prev);
+      if (next.has(playerId)) {
+        next.delete(playerId);
+      } else {
+        next.add(playerId);
+        // Auto-initialize all CMR criteria to 5 so calculation starts immediately
+        setPerformances((perfs) =>
+          perfs.map((p) =>
+            p.playerId === playerId
+              ? {
+                  ...p,
+                  defensiveContrib: p.defensiveContrib ?? 5,
+                  technicalExec: p.technicalExec ?? 5,
+                  tacticalDiscipline: p.tacticalDiscipline ?? 5,
+                  attackingContrib: p.attackingContrib ?? 5,
+                  mentalPerformance: p.mentalPerformance ?? 5,
+                  defensiveImpact: p.defensiveImpact ?? 5,
+                }
+              : p,
+          ),
+        );
+      }
+      return next;
+    });
+
+  const handleOpponentSelect = (opponentId: string) => {
+    const opp = opponents.find((o) => o._id === opponentId);
+    setMatch({
+      ...match,
+      opponentId,
+      opponent: opp?.name ?? match.opponent,
+    });
   };
 
   const handleSubmit = async () => {
@@ -94,6 +194,7 @@ export default function AddMatchForm({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...match,
+          opponentId: match.opponentId || null,
           playerPerformances: performances,
           adminPassword,
         }),
@@ -111,8 +212,10 @@ export default function AddMatchForm({
         goalsAgainst: 0,
         trainingCondition: 0.75,
         mentalityScore: 0.7,
+        opponentId: "",
       });
       setPerformances([]);
+      setExpandedCMR(new Set());
       onSuccess();
       setTimeout(() => setSuccess(false), 3000);
     } catch (e: unknown) {
@@ -136,10 +239,35 @@ export default function AddMatchForm({
             Log Match Result
           </h2>
           <p className="text-xs text-sky/40 font-body">
-            Add result + player performances
+            Result + player performances + optional structured ratings
           </p>
         </div>
       </div>
+
+      {/* Opponent selector */}
+      {opponents.length > 0 && (
+        <div className="mb-4">
+          <label className="text-xs font-mono text-sky/60 uppercase tracking-wider mb-1.5 block">
+            Link to Opponent Profile
+            <span className="text-sky/30 ml-2 normal-case">
+              (enables OSI + adjusted form index)
+            </span>
+          </label>
+          <select
+            value={match.opponentId}
+            onChange={(e) => handleOpponentSelect(e.target.value)}
+            className="w-full glass rounded-xl px-3 py-2.5 text-sm text-white font-body outline-none border border-sky/10 focus:border-ocean bg-navy-950/80"
+          >
+            <option value="">No opponent profile — enter name manually</option>
+            {opponents.map((o) => (
+              <option key={o._id} value={o._id}>
+                {o.name} · OSI: {(o as any).osi ?? "—"} · Pos:{" "}
+                {o.leaguePosition}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
 
       {/* Match details */}
       <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-4">
@@ -254,110 +382,338 @@ export default function AddMatchForm({
 
         {/* Performance rows */}
         {performances.length > 0 && (
-          <div className="space-y-2">
+          <div className="space-y-3">
             {performances.map((perf) => {
               const player = playerMap[perf.playerId];
               if (!player) return null;
+              const hasCMR = expandedCMR.has(perf.playerId);
+              const showDefImpact =
+                player.position === "DEF" || player.position === "MID";
+
+              // Live CMR preview — position weights
+              const CMR_WEIGHTS: Record<string, Record<string, number>> = {
+                GK: {
+                  defensive: 0.4,
+                  technical: 0.15,
+                  tactical: 0.25,
+                  attacking: 0.05,
+                  mental: 0.15,
+                },
+                DEF: {
+                  defensive: 0.35,
+                  technical: 0.15,
+                  tactical: 0.25,
+                  attacking: 0.1,
+                  mental: 0.15,
+                },
+                MID: {
+                  defensive: 0.2,
+                  technical: 0.25,
+                  tactical: 0.25,
+                  attacking: 0.2,
+                  mental: 0.1,
+                },
+                FWD: {
+                  defensive: 0.05,
+                  technical: 0.3,
+                  tactical: 0.2,
+                  attacking: 0.35,
+                  mental: 0.1,
+                },
+              };
+              const w = CMR_WEIGHTS[player.position] ?? CMR_WEIGHTS.MID;
+              const criteriaFilled =
+                perf.defensiveContrib !== null &&
+                perf.technicalExec !== null &&
+                perf.tacticalDiscipline !== null &&
+                perf.attackingContrib !== null &&
+                perf.mentalPerformance !== null;
+
+              const liveCMR = criteriaFilled
+                ? parseFloat(
+                    (
+                      (perf.defensiveContrib ?? 5) * w.defensive +
+                      (perf.technicalExec ?? 5) * w.technical +
+                      (perf.tacticalDiscipline ?? 5) * w.tactical +
+                      (perf.attackingContrib ?? 5) * w.attacking +
+                      (perf.mentalPerformance ?? 5) * w.mental
+                    ).toFixed(2),
+                  )
+                : null;
+
+              // When CMR is filled, auto-set rating to CMR×0.65 + gutFeel×0.35
+              // gutFeel defaults to CMR itself so OfficialRating = CMR until coach overrides
+              const autoRating =
+                liveCMR !== null
+                  ? parseFloat((liveCMR * 0.65 + perf.rating * 0.35).toFixed(2))
+                  : perf.rating;
+
+              const ratingColor =
+                autoRating >= 8
+                  ? "text-green-400"
+                  : autoRating >= 6.5
+                    ? "text-ocean"
+                    : autoRating >= 5
+                      ? "text-yellow-400"
+                      : "text-red-400";
+
               return (
-                <div
-                  key={perf.playerId}
-                  className="glass rounded-xl p-3 grid grid-cols-[1fr_auto] gap-3 items-start"
-                >
-                  <div>
-                    <div className="flex items-center gap-2 mb-2">
-                      <span
-                        className={`px-1.5 py-0.5 rounded text-xs font-mono pos-${player.position}`}
-                      >
-                        {player.position}
-                      </span>
-                      <span className="text-white text-sm font-display font-bold">
-                        {player.name} {player.surname}
-                      </span>
-                      <span className="text-sky/30 text-xs font-mono">
-                        #{player.number}
-                      </span>
-                    </div>
-                    <div className="grid grid-cols-4 gap-2">
-                      {(
-                        [
-                          { field: "minutesPlayed", label: "MIN", max: 120 },
-                          { field: "goals", label: "G", max: 10 },
-                          { field: "assists", label: "A", max: 10 },
-                          { field: "rating", label: "RTG", max: 10 },
-                        ] as const
-                      ).map(({ field, label, max }) => (
-                        <div key={field}>
-                          <label className="text-[10px] font-mono text-sky/40 block mb-1">
-                            {label}
-                          </label>
-                          <input
-                            type="number"
-                            value={perf[field]}
-                            min={field === "rating" ? 1 : 0}
-                            max={max}
-                            step={field === "rating" ? 0.5 : 1}
-                            onChange={(e) =>
-                              updatePerf(
-                                perf.playerId,
-                                field,
-                                parseFloat(e.target.value),
-                              )
-                            }
-                            className="w-full glass rounded-lg px-2 py-1 text-sm text-white font-mono outline-none border border-sky/10 focus:border-ocean bg-transparent"
-                          />
-                        </div>
-                      ))}
-                    </div>
-                    <div className="flex items-center gap-3 mt-2">
-                      {(
-                        [
-                          {
-                            field: "isMvp",
-                            label: "⭐ MVP",
-                            handler: () => handleMvp(perf.playerId),
-                          },
-                          {
-                            field: "yellowCard",
-                            label: "🟨 Yellow",
-                            handler: () =>
-                              updatePerf(
-                                perf.playerId,
-                                "yellowCard",
-                                !perf.yellowCard,
-                              ),
-                          },
-                          {
-                            field: "redCard",
-                            label: "🟥 Red",
-                            handler: () =>
-                              updatePerf(
-                                perf.playerId,
-                                "redCard",
-                                !perf.redCard,
-                              ),
-                          },
-                        ] as const
-                      ).map(({ field, label, handler }) => (
-                        <button
-                          key={field}
-                          onClick={handler}
-                          className={`text-xs px-2 py-1 rounded-lg font-mono transition-all ${
-                            perf[field]
-                              ? "bg-ocean/30 text-white border border-ocean/50"
-                              : "glass text-sky/40 hover:text-sky/70"
-                          }`}
-                        >
+                <div key={perf.playerId} className="glass rounded-xl p-3">
+                  {/* Player header */}
+                  <div className="flex items-center gap-2 mb-3">
+                    <span
+                      className={`px-1.5 py-0.5 rounded text-xs font-mono pos-${player.position}`}
+                    >
+                      {player.position}
+                    </span>
+                    <span className="text-white text-sm font-display font-bold">
+                      {player.name} {player.surname}
+                    </span>
+                    <span className="text-sky/30 text-xs font-mono">
+                      #{player.number}
+                    </span>
+                    <button
+                      onClick={() => removePlayer(perf.playerId)}
+                      className="ml-auto w-6 h-6 glass rounded-lg flex items-center justify-center text-sky/30 hover:text-red-400 transition-colors"
+                    >
+                      <Minus size={11} />
+                    </button>
+                  </div>
+
+                  {/* Core stats — 3 cols + rating display */}
+                  <div className="grid grid-cols-4 gap-2 mb-3">
+                    {(
+                      [
+                        { field: "minutesPlayed", label: "MIN", max: 120 },
+                        { field: "goals", label: "G", max: 10 },
+                        { field: "assists", label: "A", max: 10 },
+                      ] as const
+                    ).map(({ field, label, max }) => (
+                      <div key={field}>
+                        <label className="text-[10px] font-mono text-sky/40 block mb-1">
                           {label}
-                        </button>
-                      ))}
+                        </label>
+                        <input
+                          type="number"
+                          value={perf[field]}
+                          min={0}
+                          max={max}
+                          step={1}
+                          onChange={(e) =>
+                            updatePerf(
+                              perf.playerId,
+                              field,
+                              parseFloat(e.target.value),
+                            )
+                          }
+                          className="w-full glass rounded-lg px-2 py-1 text-sm text-white font-mono outline-none border border-sky/10 focus:border-ocean bg-transparent"
+                        />
+                      </div>
+                    ))}
+
+                    {/* Rating — auto-computed when CMR filled, manual otherwise */}
+                    <div>
+                      <label className="text-[10px] font-mono text-sky/40 block mb-1">
+                        {criteriaFilled ? "OFFICIAL RTG" : "COACH RTG"}
+                      </label>
+                      {criteriaFilled ? (
+                        <div
+                          className={`glass rounded-lg px-2 py-1 text-sm font-mono font-bold text-center border border-ocean/30 ${ratingColor}`}
+                        >
+                          {autoRating.toFixed(1)}
+                        </div>
+                      ) : (
+                        <input
+                          type="number"
+                          value={perf.rating}
+                          min={1}
+                          max={10}
+                          step={0.5}
+                          onChange={(e) =>
+                            updatePerf(
+                              perf.playerId,
+                              "rating",
+                              parseFloat(e.target.value),
+                            )
+                          }
+                          className="w-full glass rounded-lg px-2 py-1 text-sm text-white font-mono outline-none border border-sky/10 focus:border-ocean bg-transparent"
+                        />
+                      )}
                     </div>
                   </div>
-                  <button
-                    onClick={() => removePlayer(perf.playerId)}
-                    className="w-7 h-7 glass rounded-lg flex items-center justify-center text-sky/30 hover:text-red-400 transition-colors"
-                  >
-                    <Minus size={12} />
-                  </button>
+
+                  {/* CMR live preview strip — visible when CMR is expanded and filled */}
+                  {hasCMR && criteriaFilled && liveCMR !== null && (
+                    <div className="flex items-center gap-3 mb-3 px-3 py-2 glass rounded-lg border border-ocean/20">
+                      <div className="flex-1 grid grid-cols-3 gap-3 text-center">
+                        <div>
+                          <div
+                            className={`font-mono font-bold text-sm ${ratingColor}`}
+                          >
+                            {liveCMR.toFixed(2)}
+                          </div>
+                          <div className="text-[9px] font-mono text-sky/40">
+                            CMR
+                          </div>
+                        </div>
+                        <div>
+                          <div className="font-mono font-bold text-sm text-sky/60">
+                            {perf.rating.toFixed(1)}
+                          </div>
+                          <div className="text-[9px] font-mono text-sky/40">
+                            Gut feel
+                          </div>
+                        </div>
+                        <div>
+                          <div
+                            className={`font-mono font-bold text-sm ${ratingColor}`}
+                          >
+                            {autoRating.toFixed(2)}
+                          </div>
+                          <div className="text-[9px] font-mono text-sky/40">
+                            Official
+                          </div>
+                        </div>
+                      </div>
+                      <div className="text-[9px] font-mono text-sky/30 text-right leading-tight">
+                        CMR×0.65
+                        <br />+ Gut×0.35
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Gut-feel override when CMR is active */}
+                  {hasCMR && criteriaFilled && (
+                    <div className="mb-3">
+                      <label className="text-[10px] font-mono text-sky/40 uppercase mb-1 block">
+                        Gut-feel override (1–10) · adjusts official rating
+                      </label>
+                      <input
+                        type="range"
+                        min={1}
+                        max={10}
+                        step={0.5}
+                        value={perf.rating}
+                        onChange={(e) =>
+                          updatePerf(
+                            perf.playerId,
+                            "rating",
+                            parseFloat(e.target.value),
+                          )
+                        }
+                        className="w-full accent-ocean"
+                      />
+                    </div>
+                  )}
+
+                  {/* Toggles */}
+                  <div className="flex items-center gap-3 mb-3">
+                    {(
+                      [
+                        {
+                          field: "isMvp",
+                          label: "⭐ MVP",
+                          handler: () => handleMvp(perf.playerId),
+                        },
+                        {
+                          field: "yellowCard",
+                          label: "🟨 Yellow",
+                          handler: () =>
+                            updatePerf(
+                              perf.playerId,
+                              "yellowCard",
+                              !perf.yellowCard,
+                            ),
+                        },
+                        {
+                          field: "redCard",
+                          label: "🟥 Red",
+                          handler: () =>
+                            updatePerf(perf.playerId, "redCard", !perf.redCard),
+                        },
+                      ] as const
+                    ).map(({ field, label, handler }) => (
+                      <button
+                        key={field}
+                        onClick={handler}
+                        className={`text-xs px-2 py-1 rounded-lg font-mono transition-all ${
+                          perf[field]
+                            ? "bg-ocean/30 text-white border border-ocean/50"
+                            : "glass text-sky/40 hover:text-sky/70"
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+
+                    <button
+                      onClick={() => toggleCMR(perf.playerId)}
+                      className={`ml-auto flex items-center gap-1 text-[10px] font-mono transition-colors ${
+                        hasCMR
+                          ? "text-ocean hover:text-sky"
+                          : "text-sky/40 hover:text-sky/70"
+                      }`}
+                    >
+                      {hasCMR ? (
+                        <ChevronUp size={11} />
+                      ) : (
+                        <ChevronDown size={11} />
+                      )}
+                      {hasCMR ? "Hide" : "Rate by criteria"}
+                    </button>
+                  </div>
+
+                  {/* CMR criteria sliders */}
+                  {hasCMR && (
+                    <div className="border-t border-sky/10 pt-3 space-y-2">
+                      <p className="text-[10px] font-mono text-sky/40 mb-2">
+                        CRITERIA RATING — slides auto-calculate Official Rating
+                        above
+                      </p>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        {(
+                          [
+                            {
+                              key: "defensiveContrib",
+                              label: "Defensive Contribution",
+                            },
+                            {
+                              key: "technicalExec",
+                              label: "Technical Execution",
+                            },
+                            {
+                              key: "tacticalDiscipline",
+                              label: "Tactical Discipline",
+                            },
+                            {
+                              key: "attackingContrib",
+                              label: "Attacking Contribution",
+                            },
+                            {
+                              key: "mentalPerformance",
+                              label: "Mental Performance",
+                            },
+                          ] as const
+                        ).map(({ key, label }) => (
+                          <CriteriaSlider
+                            key={key}
+                            label={label}
+                            value={perf[key] ?? 5}
+                            onChange={(v) => updatePerf(perf.playerId, key, v)}
+                          />
+                        ))}
+                        {showDefImpact && (
+                          <CriteriaSlider
+                            label="Defensive Impact (DEF/MID)"
+                            value={perf.defensiveImpact ?? 5}
+                            onChange={(v) =>
+                              updatePerf(perf.playerId, "defensiveImpact", v)
+                            }
+                          />
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
               );
             })}
