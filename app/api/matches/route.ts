@@ -61,23 +61,31 @@ export async function POST(req: NextRequest) {
     if (body.goalsFor > body.goalsAgainst) result = "W";
     else if (body.goalsFor < body.goalsAgainst) result = "L";
 
-    // ── Resolve opponent OSI (if opponent model exists) ───────────
-    // opponentId is optional — old matches and new matches without an
-    // opponent profile attached will simply store null.
+    // ── Resolve opponent OSI ──────────────────────────────────────
     let resolvedOSI: number | null = null;
-    let opponentId: string | null = body.opponentId ?? null;
+    const opponentId: string | null = body.opponentId ?? null;
 
     if (opponentId) {
       const OpponentModel = await getOpponentModel();
       if (OpponentModel) {
         const opponent = await OpponentModel.findById(opponentId).lean();
         if (opponent) {
-          // Lazy import to avoid circular issues
           const { calcOSI } = await import("@/lib/stats");
           resolvedOSI = calcOSI(opponent as any);
         }
       }
     }
+
+    // ── Resolve player positions upfront (fixes CMR position bug) ─
+    const incomingPlayerIds = (body.playerPerformances ?? []).map(
+      (p: any) => p.playerId,
+    );
+    const perfPlayers = await PlayerModel.find({
+      _id: { $in: incomingPlayerIds },
+    }).lean();
+    const posMap = Object.fromEntries(
+      perfPlayers.map((p) => [String(p._id), p.position as string]),
+    );
 
     // ── Persist match ─────────────────────────────────────────────
     const match = await MatchModel.create({
@@ -89,8 +97,8 @@ export async function POST(req: NextRequest) {
       result,
       trainingCondition: body.trainingCondition,
       mentalityScore: body.mentalityScore,
-      opponentId, // null for old matches — handled gracefully everywhere
-      osi: resolvedOSI, // cached on match so dashboard doesn't re-fetch
+      opponentId,
+      osi: resolvedOSI,
       playerPerformances: (body.playerPerformances ?? []).map((perf: any) => ({
         playerId: perf.playerId,
         minutesPlayed: perf.minutesPlayed,
@@ -100,59 +108,33 @@ export async function POST(req: NextRequest) {
         isMvp: perf.isMvp ?? false,
         yellowCard: perf.yellowCard ?? false,
         redCard: perf.redCard ?? false,
-        // Structured match rating fields — null on old data, populated when coach
-        // uses the new structured evaluation form in the admin panel.
         defensiveContrib: perf.defensiveContrib ?? null,
         technicalExec: perf.technicalExec ?? null,
         tacticalDiscipline: perf.tacticalDiscipline ?? null,
         attackingContrib: perf.attackingContrib ?? null,
         mentalPerformance: perf.mentalPerformance ?? null,
-        // Defensive impact — single coach-rated field (1–10), null on old data.
         defensiveImpact: perf.defensiveImpact ?? null,
-        // Computed and stored so IPMS can read pressure-response deltas without
-        // re-fetching opponent data on every profile load.
         osi: resolvedOSI,
       })),
     });
 
-    // ── Compute CMR and OfficialRating per player (if criteria present) ──
-    // We do this after creation so we have the match._id, then update in place.
+    // ── Compute CMR and officialRating per player ─────────────────
     const { calcCMR, calcOfficialRating } = await import("@/lib/stats");
 
-    const performancesWithRatings = (body.playerPerformances ?? []).map(
-      (perf: any) => {
-        const position = "MID"; // will be overwritten per-player below
-        const criteria = {
-          defensiveContrib: perf.defensiveContrib ?? null,
-          technicalExec: perf.technicalExec ?? null,
-          tacticalDiscipline: perf.tacticalDiscipline ?? null,
-          attackingContrib: perf.attackingContrib ?? null,
-          mentalPerformance: perf.mentalPerformance ?? null,
-        };
-        return { playerId: perf.playerId, criteria, coachRating: perf.rating };
-      },
-    );
+    for (const perf of body.playerPerformances ?? []) {
+      const position = posMap[String(perf.playerId)] ?? "MID";
+      const criteria = {
+        defensiveContrib: perf.defensiveContrib ?? null,
+        technicalExec: perf.technicalExec ?? null,
+        tacticalDiscipline: perf.tacticalDiscipline ?? null,
+        attackingContrib: perf.attackingContrib ?? null,
+        mentalPerformance: perf.mentalPerformance ?? null,
+      };
+      const cmr = calcCMR(criteria, position);
+      const officialRating = calcOfficialRating(cmr, perf.rating, resolvedOSI);
 
-    // Fetch positions for CMR calculation
-    const perfPlayerIds = performancesWithRatings.map((p: any) => p.playerId);
-    const perfPlayers = await PlayerModel.find({
-      _id: { $in: perfPlayerIds },
-    }).lean();
-    const posMap = Object.fromEntries(
-      perfPlayers.map((p) => [String(p._id), p.position as string]),
-    );
-
-    // Update each performance with computed CMR + OfficialRating
-    for (const p of performancesWithRatings) {
-      const position = posMap[String(p.playerId)] ?? "MID";
-      const cmr = calcCMR(p.criteria, position);
-      const officialRating = calcOfficialRating(
-        cmr,
-        p.coachRating,
-        resolvedOSI,
-      );
       await MatchModel.updateOne(
-        { _id: match._id, "playerPerformances.playerId": p.playerId },
+        { _id: match._id, "playerPerformances.playerId": perf.playerId },
         {
           $set: {
             "playerPerformances.$.cmr": cmr,
@@ -160,23 +142,6 @@ export async function POST(req: NextRequest) {
           },
         },
       );
-    }
-
-    // ── Update player cumulative stats ────────────────────────────
-    for (const perf of body.playerPerformances ?? []) {
-      const update: Record<string, unknown> = {
-        $inc: {
-          gamesPlayed: perf.minutesPlayed > 0 ? 1 : 0,
-          minutesPlayed: perf.minutesPlayed,
-          goals: perf.goals,
-          assists: perf.assists,
-          mvpCount: perf.isMvp ? 1 : 0,
-          yellowCards: perf.yellowCard ? 1 : 0,
-          redCards: perf.redCard ? 1 : 0,
-        },
-        $push: { ratings: perf.rating },
-      };
-      await PlayerModel.findByIdAndUpdate(perf.playerId, update);
     }
 
     // ── Write discipline events for cards ─────────────────────────

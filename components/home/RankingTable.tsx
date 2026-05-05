@@ -1,16 +1,47 @@
 "use client";
-import { Player, ProductionProfile } from "@/types";
+
 import { calcAvgRating, calcConsistencyScore } from "@/lib/stats";
+import { ProductionProfile } from "@/types";
 import { Star, Zap, Target } from "lucide-react";
 import Image from "next/image";
 import { getPlayerImage } from "@/lib/playerImages";
 import Link from "next/link";
 
-interface Props {
-  players: Player[];
-  productionMap?: Record<string, ProductionProfile>;
+// ── Module-level constants ────────────────────────────────────────
+const CONTRIBUTION_WEIGHTS: Record<
+  string,
+  { g: number; a: number; def: number }
+> = {
+  GK: { g: 0.5, a: 0.5, def: 3.0 },
+  DEF: { g: 1.0, a: 1.5, def: 2.5 },
+  MID: { g: 2.0, a: 2.0, def: 1.0 },
+  FWD: { g: 3.0, a: 2.0, def: 0.5 },
+};
+
+const MIN_GAMES_THRESHOLD = 3;
+
+// ── Types ─────────────────────────────────────────────────────────
+export interface RankedPlayer {
+  _id: string;
+  name: string;
+  surname: string;
+  position: string;
+  number: number;
+  avatarKey?: string;
+  gamesPlayed: number;
+  minutesPlayed: number;
+  goals: number;
+  assists: number;
+  mvpCount: number;
+  ratings: number[];
+  production: ProductionProfile | null;
 }
 
+interface Props {
+  players: RankedPlayer[];
+}
+
+// ── Sub-components ────────────────────────────────────────────────
 function MedalIcon({ rank }: { rank: number }) {
   if (rank === 1)
     return (
@@ -27,11 +58,11 @@ function MedalIcon({ rank }: { rank: number }) {
   return <span className="text-sky/30 font-mono text-sm">{rank}</span>;
 }
 
-function Avatar({ player }: { player: Player }) {
+function Avatar({ player }: { player: RankedPlayer }) {
   return (
     <div className="relative w-9 h-9 rounded-xl overflow-hidden bg-navy-800/60 flex-shrink-0 border border-sky/10">
       <Image
-        src={getPlayerImage(player.avatarKey)}
+        src={getPlayerImage(player.avatarKey || "")}
         alt={`${player.name} ${player.surname}`}
         fill
         sizes="36px"
@@ -42,47 +73,63 @@ function Avatar({ player }: { player: Player }) {
   );
 }
 
-export default function RankingTable({ players, productionMap = {} }: Props) {
-  // Position-aware composite score.
-  //
-  // AvgRating is the primary signal because it already reflects positional context:
-  // a 7.5 for a CB is earned through defensive work, a 7.5 for a FWD through attacking
-  // output. Making it the heaviest component makes the ranking fair across positions.
-  //
-  // Goal/Assist weights are reduced and position-scaled so defenders aren't penalised
-  // for not scoring. DefensiveImpact (when available) is rewarded for DEF and GK.
-  const CONTRIBUTION_WEIGHTS: Record<
-    string,
-    { g: number; a: number; def: number }
-  > = {
-    GK: { g: 0.5, a: 0.5, def: 3.0 },
-    DEF: { g: 1.0, a: 1.5, def: 2.5 },
-    MID: { g: 2.0, a: 2.0, def: 1.0 },
-    FWD: { g: 3.0, a: 2.0, def: 0.5 },
-  };
+// ── Main component ────────────────────────────────────────────────
+export default function RankingTable({ players }: Props) {
+  // Max minutes in squad — used to normalize the minutes bonus to 0–1
+  const maxMinutes = Math.max(...players.map((p) => p.minutesPlayed), 1);
 
   const ranked = [...players]
     .map((p) => {
       const avgRating = calcAvgRating(p.ratings);
       const consistency = calcConsistencyScore(p.ratings);
-      const production = productionMap[p._id ?? ""] ?? null;
+      const production = p.production ?? null;
       const w = CONTRIBUTION_WEIGHTS[p.position] ?? CONTRIBUTION_WEIGHTS.MID;
+
+      // Players below the minimum games threshold are pushed to the bottom
+      // regardless of their raw numbers — small samples mislead.
+      const belowThreshold = p.gamesPlayed < MIN_GAMES_THRESHOLD;
 
       const score =
         p.gamesPlayed === 0
           ? -1
-          : avgRating * 4.0 + // primary signal — position-agnostic quality
-            (p.minutesPlayed / 80) * 1.5 + // coach trust — time on pitch
-            p.mvpCount * 4.0 + // standout performance recognition
-            p.goals * w.g + // position-scaled attacking contribution
-            p.assists * w.a + // position-scaled creation
-            (p.minutesPlayed >= 160
-              ? (production?.goalsPer80 ?? 0) * w.g * 0.5
-              : 0); // efficiency bonus — min 2 full matches
+          : belowThreshold
+            ? // Small sample tier — still ranked among themselves but below everyone else
+              -0.5 + avgRating * 0.01
+            : // Main formula — fixed double-count, normalized minutes, reduced MVP weight
+              avgRating * 5.0 +
+              // Minutes normalized to 0–1 relative to the most-played player
+              (p.minutesPlayed / maxMinutes) * 3.0 +
+              // MVP reduced: standout games already push avgRating up
+              p.mvpCount * 2.0 +
+              // Per-80 efficiency only (no raw G/A — removes double-count)
+              // Gated at 160 min (2 full matches) for statistical validity
+              (p.minutesPlayed >= 160
+                ? (production?.goalsPer80 ?? 0) * w.g +
+                  (production?.assistsPer80 ?? 0) * w.a
+                : 0);
 
-      return { ...p, avgRating, consistency, score, production };
+      return {
+        ...p,
+        avgRating,
+        consistency,
+        score,
+        production,
+        belowThreshold,
+      };
     })
     .sort((a, b) => b.score - a.score);
+
+  // Separate tiers for display
+  const mainTier = ranked.filter((p) => !p.belowThreshold && p.gamesPlayed > 0);
+  const smallSampleTier = ranked.filter(
+    (p) => p.belowThreshold && p.gamesPlayed > 0,
+  );
+  const noGamesTier = ranked.filter((p) => p.gamesPlayed === 0);
+
+  const allRanked = [...mainTier, ...smallSampleTier, ...noGamesTier];
+
+  const COLS =
+    "grid grid-cols-[40px_minmax(160px,1fr)_45px_50px_40px_40px_45px_50px_50px_50px_60px_80px] gap-1 px-4 items-center overflow-x-auto";
 
   return (
     <div className="glass rounded-2xl overflow-hidden">
@@ -93,7 +140,8 @@ export default function RankingTable({ players, productionMap = {} }: Props) {
             Player Rankings
           </h3>
           <p className="text-xs text-sky/40 font-body mt-0.5">
-            Rating×4 + MVP×4 + Minutes/80×1.5 + Position-weighted G/A
+            Rating×5 + Minutes (normalized)×3 + MVP×2 + Position-weighted per-80
+            G/A
           </p>
         </div>
         <span className="glass rounded-lg px-3 py-1 text-xs font-mono text-sky/60">
@@ -102,7 +150,9 @@ export default function RankingTable({ players, productionMap = {} }: Props) {
       </div>
 
       {/* Column headers */}
-      <div className="grid grid-cols-[40px_minmax(160px,1fr)_45px_50px_40px_40px_45px_50px_50px_50px_60px_80px] gap-1 px-4 py-2 text-[10px] font-mono text-sky/40 uppercase tracking-wider border-b border-sky/5 overflow-x-auto">
+      <div
+        className={`${COLS} py-2 text-[10px] font-mono text-sky/40 uppercase tracking-wider border-b border-sky/5`}
+      >
         <div>#</div>
         <div>Player</div>
         <div className="text-center">GP</div>
@@ -118,7 +168,7 @@ export default function RankingTable({ players, productionMap = {} }: Props) {
       </div>
 
       {/* Rows */}
-      {ranked.length === 0 ? (
+      {allRanked.length === 0 ? (
         <div className="py-16 text-center">
           <p className="text-sky/30 font-body text-sm">
             No players yet. Add them from Admin.
@@ -126,8 +176,9 @@ export default function RankingTable({ players, productionMap = {} }: Props) {
         </div>
       ) : (
         <div>
-          {ranked.map((player, i) => {
+          {allRanked.map((player, i) => {
             const rank = i + 1;
+
             const ratingColor =
               player.avgRating >= 8
                 ? "text-green-400"
@@ -150,7 +201,7 @@ export default function RankingTable({ players, productionMap = {} }: Props) {
               <Link
                 href={`/players/${player._id}`}
                 key={player._id}
-                className="rank-row grid grid-cols-[40px_minmax(160px,1fr)_45px_50px_40px_40px_45px_50px_50px_50px_60px_80px] gap-1 px-4 py-3 items-center overflow-x-auto"
+                className={`rank-row ${COLS} py-3 ${player.belowThreshold ? "opacity-50" : ""}`}
               >
                 {/* Rank */}
                 <div className="flex items-center justify-center">
@@ -173,6 +224,11 @@ export default function RankingTable({ players, productionMap = {} }: Props) {
                       <span className="text-sky/30 font-mono text-xs">
                         #{player.number}
                       </span>
+                      {player.belowThreshold && (
+                        <span className="text-sky/30 font-mono text-xs">
+                          small sample
+                        </span>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -292,7 +348,7 @@ export default function RankingTable({ players, productionMap = {} }: Props) {
         </div>
       )}
 
-      {/* Column legend */}
+      {/* Legend */}
       <div className="px-5 py-3 border-t border-sky/10 bg-navy-950/20 flex flex-wrap gap-x-4 gap-y-1">
         {[
           { col: "MIN", desc: "Total minutes played this season" },
@@ -310,7 +366,7 @@ export default function RankingTable({ players, productionMap = {} }: Props) {
           </div>
         ))}
         <span className="text-[10px] font-mono text-sky/20 ml-auto">
-          —* insufficient minutes
+          —* insufficient minutes · dimmed = &lt;{MIN_GAMES_THRESHOLD} games
         </span>
       </div>
     </div>

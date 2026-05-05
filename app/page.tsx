@@ -42,6 +42,7 @@ import DisciplineWatch from "@/components/home/DisciplineWatch";
 import Link from "next/link";
 import { Settings } from "lucide-react";
 
+// ─── Soft imports ─────────────────────────────────────────────────
 async function getPlayerAttributeModel() {
   try {
     return (await import("@/lib/models/PlayerAttribute")).default;
@@ -64,6 +65,30 @@ async function getOpponentModel() {
   }
 }
 
+// ─── Per-player stats aggregated from Match documents ─────────────
+type PlayerStats = {
+  gamesPlayed: number;
+  minutesPlayed: number;
+  goals: number;
+  assists: number;
+  mvpCount: number;
+  yellowCards: number;
+  redCards: number;
+  ratings: number[];
+};
+
+const EMPTY_PLAYER_STATS: PlayerStats = {
+  gamesPlayed: 0,
+  minutesPlayed: 0,
+  goals: 0,
+  assists: 0,
+  mvpCount: 0,
+  yellowCards: 0,
+  redCards: 0,
+  ratings: [],
+};
+
+// ─── Data fetching ─────────────────────────────────────────────────
 async function getData() {
   await connectDB();
 
@@ -77,13 +102,13 @@ async function getData() {
   const typedPlayers = players as unknown as Player[];
   const typedSessions = allSessions as unknown as TrainingSession[];
 
-  // OSI map from cached match.osi fields
+  // ── OSI map from cached match.osi fields ──────────────────────
   const osiMap: Record<string, number> = {};
   matches.forEach((m: any) => {
     if (m.osi != null) osiMap[String(m._id)] = m.osi;
   });
 
-  // Rolling TC / MS
+  // ── Rolling TC / MS ───────────────────────────────────────────
   const { tc, ms, formulaVersion, sessionCount } =
     calcRollingTeamCondition(typedSessions);
   const condition: TeamCondition = {
@@ -93,7 +118,7 @@ async function getData() {
     sessionCount,
   };
 
-  // MPI
+  // ── MPI ───────────────────────────────────────────────────────
   const ratingHistory = typedMatches.map((m) => {
     const perfs = m.playerPerformances;
     if (!perfs.length) return 5;
@@ -106,14 +131,13 @@ async function getData() {
   });
   const mpi: MPI = calcMPI(ratingHistory);
 
-  // SQI — optional, defaults to 0.5 until pillar data exists
+  // ── SQI — optional, defaults to 0.5 until pillar data exists ─
   let sqi = 0.5;
   const PlayerAttributeModel = await getPlayerAttributeModel();
   if (PlayerAttributeModel) {
     const allAssessments = (await PlayerAttributeModel.find(
       {},
     ).lean()) as unknown as PillarAssessment[];
-
     const posMap = Object.fromEntries(
       typedPlayers.map((p) => [String(p._id), p.position]),
     );
@@ -132,7 +156,7 @@ async function getData() {
     if (pillarOveralls.length > 0) sqi = calcSQI(pillarOveralls);
   }
 
-  // Team stats
+  // ── Team stats ────────────────────────────────────────────────
   const stats = calcTeamStats(
     typedMatches,
     typedPlayers,
@@ -143,7 +167,7 @@ async function getData() {
     osiMap,
   );
 
-  // Next match outlook — optional, needs Opponent model
+  // ── Next match outlook — optional ─────────────────────────────
   let nextMatchOutlook: NextMatchOutlook | null = null;
   const OpponentModel = await getOpponentModel();
   if (OpponentModel) {
@@ -161,13 +185,13 @@ async function getData() {
     }
   }
 
-  // Week summaries for Top5 widget
+  // ── Week summaries for Top5 widget ───────────────────────────
   const weekAgo = new Date();
   weekAgo.setDate(weekAgo.getDate() - 7);
   const weekSessions = typedSessions.filter((s) => new Date(s.date) >= weekAgo);
   const weekSummaries = calcPlayerWeekSummaries(weekSessions, typedPlayers);
 
-  // Per-player production profile + attendance + injury risk
+  // ── Per-player production + attendance + injury ───────────────
   const playerExtended: PlayerExtended[] = typedPlayers.map((player) => {
     const pid = String(player._id);
     return {
@@ -178,7 +202,7 @@ async function getData() {
     };
   });
 
-  // Discipline rankings — optional, needs DisciplineLog model
+  // ── Discipline rankings — optional ────────────────────────────
   let disciplineRankings: DisciplineRanking[] = [];
   const DisciplineLogModel = await getDisciplineLogModel();
   if (DisciplineLogModel) {
@@ -199,7 +223,7 @@ async function getData() {
       .slice(0, 5);
   }
 
-  // Session trend data for TrainingTrendChart
+  // ── Session trend for TrainingTrendChart ──────────────────────
   const sessionTrend = typedSessions.slice(-10).map((s: any) => ({
     date: s.date,
     tc: Math.round(s.teamTC * 100),
@@ -208,8 +232,54 @@ async function getData() {
     formulaVersion: s.formulaVersion ?? 1,
   }));
 
-  // Serialize everything through JSON to strip ObjectId and other Mongoose class instances.
-  // Next.js cannot pass class instances from Server → Client Components.
+  // ── Aggregate per-player stats from Match documents ───────────
+  // Player documents are identity-only. All cumulative stats are
+  // computed fresh here from the Match collection on every request.
+  const statsMap: Record<string, PlayerStats> = {};
+
+  for (const match of typedMatches) {
+    for (const perf of match.playerPerformances as any[]) {
+      const pid = String(perf.playerId);
+
+      if (!statsMap[pid]) {
+        statsMap[pid] = { ...EMPTY_PLAYER_STATS, ratings: [] };
+      }
+
+      const s = statsMap[pid]!;
+
+      if (perf.minutesPlayed > 0) s.gamesPlayed++;
+      s.minutesPlayed += perf.minutesPlayed ?? 0;
+      s.goals += perf.goals ?? 0;
+      s.assists += perf.assists ?? 0;
+      if (perf.isMvp) s.mvpCount++;
+      if (perf.yellowCard) s.yellowCards++;
+      if (perf.redCard) s.redCards++;
+
+      // officialRating (CMR-blended) preferred — falls back to raw
+      // coach rating for matches logged before CMR was introduced.
+      if (perf.minutesPlayed > 0) {
+        const rating = perf.officialRating ?? perf.rating;
+        if (rating != null) s.ratings.push(rating);
+      }
+    }
+  }
+
+  const rankedPlayers = typedPlayers.map((player) => {
+    const pid = String(player._id);
+    const stats = statsMap[pid] ?? { ...EMPTY_PLAYER_STATS, ratings: [] };
+    const production = calcProductionProfile(
+      { ...player, ...stats } as any,
+      typedMatches,
+    );
+    return {
+      ...player,
+      _id: pid, // ← explicitly string, overrides the optional from Player type
+      ...stats,
+      production,
+    };
+  });
+
+  // ── Serialize — strips ObjectId and Mongoose class instances ──
   const serialize = <T,>(v: T): T => JSON.parse(JSON.stringify(v));
 
   return {
@@ -222,10 +292,11 @@ async function getData() {
     playerExtended: serialize(playerExtended),
     disciplineRankings: serialize(disciplineRankings),
     sessionTrend: serialize(sessionTrend),
-    players: serialize(players) as unknown as Player[],
+    rankedPlayers: serialize(rankedPlayers),
   };
 }
 
+// ─── Page ─────────────────────────────────────────────────────────
 export default async function HomePage() {
   const {
     stats,
@@ -237,12 +308,8 @@ export default async function HomePage() {
     playerExtended,
     disciplineRankings,
     sessionTrend,
-    players,
+    rankedPlayers,
   } = await getData();
-
-  const productionMap = Object.fromEntries(
-    playerExtended.map((pe) => [pe.playerId, pe.productionProfile]),
-  );
 
   return (
     <div className="min-h-screen">
@@ -259,7 +326,7 @@ export default async function HomePage() {
       </div>
 
       <main className="max-w-screen-xl mx-auto px-6 py-6 space-y-5">
-        {/* Row 1: Team stats (compact) + Match Readiness (content-heavy, wider) */}
+        {/* Row 1: Team stats + Match Readiness */}
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_1.4fr] gap-5">
           <TeamStatsGrid stats={stats} />
           <MatchReadiness
@@ -270,7 +337,7 @@ export default async function HomePage() {
           />
         </div>
 
-        {/* Row 2: Win Probability + Rating chart — shorter cards, side by side */}
+        {/* Row 2: Win Probability + Rating chart */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
           <WinProbabilityCard
             outlook={nextMatchOutlook}
@@ -285,7 +352,7 @@ export default async function HomePage() {
           <TrainingTrendChart sessions={sessionTrend} condition={condition} />
         </div>
 
-        {/* Row 4: Discipline Watch — only renders once DisciplineLog model exists */}
+        {/* Row 4: Discipline Watch — uncomment when DisciplineLog model is ready */}
         {/* {disciplineRankings.length > 0 && (
           <DisciplineWatch rankings={disciplineRankings} />
         )} */}
@@ -300,7 +367,7 @@ export default async function HomePage() {
             </div>
           }
         >
-          <RankingTable players={players} productionMap={productionMap} />
+          <RankingTable players={rankedPlayers} />
         </Suspense>
 
         <footer className="text-center py-4">
